@@ -13,6 +13,20 @@ check_fs() {
     fi
 }
 
+redraw_screen() {
+    clear
+    draw_header
+}
+
+check_sudo() {
+    gum_notify info "Проверка прав root/sudo..."
+    if [[ $EUID -ne 0 ]] && ! sudo -v >/dev/null 2>&1; then
+        gum_notify err "Нужны права root или доступ к sudo. Завершение."
+        exit 1
+    fi
+    gum_notify ok "Права проверены."
+}
+
 exists() {
     which "$1" >/dev/null 2>/dev/null
 }
