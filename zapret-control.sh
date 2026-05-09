@@ -5,6 +5,8 @@ BASE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 source "$BASE_DIR/files/utils.sh"
 source "$BASE_DIR/files/config.sh"
 source "$BASE_DIR/files/init.sh"
+source "$BASE_DIR/files/gum_utils.sh"     # Расширенные UI утилиты
+source "$BASE_DIR/files/ux_gum.sh"         # Обертки для обратной совместимости
 source "$BASE_DIR/files/menu.sh"
 source "$BASE_DIR/files/service.sh"
 source "$BASE_DIR/files/install.sh"
@@ -12,10 +14,9 @@ source "$BASE_DIR/files/install_ctx.sh"
 source "$BASE_DIR/files/state.sh"
 source "$BASE_DIR/files/products.sh"
 source "$BASE_DIR/files/service_ctx.sh"
-source "$BASE_DIR/files/ux_gum.sh"
 source "$BASE_DIR/files/flow_v2.sh"
 
-set -e  
+set -e
 
 check_sudo
 

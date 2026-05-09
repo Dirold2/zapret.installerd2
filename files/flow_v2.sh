@@ -1,432 +1,404 @@
 #!/bin/bash
 
-ensure_gum_best_effort() {
-    if command -v gum >/dev/null 2>&1; then
-        return 0
+# flow_v2.sh - Лаконичный интерактивный flow с gum
+# Использует функции из gum_utils.sh
+
+UI_DIRTY=true
+UI_COMPACT=false
+UI_COLS=0
+UI_LINES=0
+GUM_MENU_HEIGHT=10
+
+on_resize() { UI_DIRTY=true; }
+trap 'on_resize' WINCH
+
+action_import_config() {
+    local imported
+    imported="$(config_import_pick)" || return 1
+    print_header "Предпросмотр config" "normal"
+
+    if command -v bat >/dev/null 2>&1; then bat --style=plain --paging=always "$imported"
+    elif command -v less >/dev/null 2>&1; then less "$imported"
+    elif command -v more >/dev/null 2>&1; then more "$imported"
+    else cat "$imported"; echo; pause; fi
+
+    if ! grep -qE "NFQWS_OPT|MODE_FILTER|TPWS_OPT" "$imported"; then
+        gum_notify warn "Файл не похож на zapret config"
+        if ! gum_confirm "Всё равно импортировать?"; then return 1; fi
     fi
 
-    # Best effort install via package manager. If it fails, we still keep fallback UX.
-    [ -f /etc/os-release ] && . /etc/os-release
-    case "${ID:-}" in
-        arch|artix|cachyos|endeavouros|manjaro|garuda)
-            $SUDO pacman -S --noconfirm --needed gum >/dev/null 2>&1 || true
-            ;;
-        debian|ubuntu|mint)
-            $SUDO apt-get update -y >/dev/null 2>&1 || true
-            $SUDO apt-get install -y gum >/dev/null 2>&1 || true
-            ;;
-        fedora|almalinux|rocky|rhel|centos|oracle|redos)
-            if command -v dnf >/dev/null 2>&1; then
-                $SUDO dnf install -y gum >/dev/null 2>&1 || true
-            elif command -v yum >/dev/null 2>&1; then
-                $SUDO yum install -y gum >/dev/null 2>&1 || true
-            fi
-            ;;
-        opensuse)
-            $SUDO zypper install -y gum >/dev/null 2>&1 || true
-            ;;
-        alpine)
-            $SUDO apk add gum >/dev/null 2>&1 || true
-            ;;
-    esac
+    if ! gum_confirm "Импортировать config в $PRODUCT_CONFIG_FILE ?"; then return 1; fi
 
-    command -v gum >/dev/null 2>&1
+    backup_begin || true
+    backup_path "$PRODUCT_CONFIG_FILE" || true
+    cp -f -- "$imported" "$PRODUCT_CONFIG_FILE"
+
+    gum_notify info "Конфиг импортирован"
+    if gum_confirm "Перезапустить $PRODUCT_ID ?"; then action_restart; fi
+    gum_pause
 }
 
-ui_header() {
-    local mode_txt
-    mode_txt="$(state_load >/dev/null 2>&1; echo "$INSTALL_MODE")"
-    echo "zapret.installer  |  режим: $mode_txt  |  zapret / zapret2 / оба"
-}
-
-draw_header() {
-    ui_header
-    echo ""
-}
-
-
-term_too_small() {
-    local cols lines
-    cols="$(tput cols 2>/dev/null || echo 0)"
-    lines="$(tput lines 2>/dev/null || echo 0)"
-    [ "$cols" -gt 0 ] && [ "$cols" -lt 70 ] && return 0
-    [ "$lines" -gt 0 ] && [ "$lines" -lt 18 ] && return 0
-    return 1
-}
-
-product_detect_installed() {
-    # Basic heuristic: directory + binaries folder + service presence (if detectable)
-    if [ -d "$PRODUCT_DIR" ] && [ -d "$PRODUCT_DIR/binaries" ]; then
-        if service_is_installed "$PRODUCT_SERVICE"; then
-            return 0
-        fi
-        # For partially installed systems where init adapter can't detect units reliably
-        return 0
-    fi
-    return 1
-}
-
-print_header() {
-    local title="${1:-}"
-    local style="${2:-normal}"
-    
-    clear
-    
-    # Если заголовок не передан, определяем автоматически
-    if [[ -z "$title" ]]; then
-        # Если определена переменная NAME из модуля - используем её
-        if [[ -n "${NAME:-}" ]]; then
-            title="$NAME"
-        else
-            # Иначе используем название проекта
-            title="ZAPRET_INSTALLER"
-        fi
-    fi
-    
-    # Определяем цвет рамки в зависимости от стиля
-    local border_color="$ACCENT"
-    local text_color=""
-    
-    case "$style" in
-        error|danger|red)
-            border_color="$RED"
-            text_color="$RED"
-            ;;
-        success|ok|green)
-            border_color="$GREEN"
-            text_color="$GREEN"
-            ;;
-        warning|warn|yellow)
-            border_color="$YELLOW"
-            text_color="$YELLOW"
-            ;;
-        info|blue)
-            border_color="$CYAN"
-            text_color="$CYAN"
-            ;;
-        accent|magenta)
-            border_color="$MAGENTA"
-            text_color="$MAGENTA"
-            ;;
-        normal|*)
-            border_color="$ACCENT"
-            text_color=""
-            ;;
-    esac
-    
-    # Выводим заголовок с цветом
-    if [[ -n "$text_color" ]]; then
-        gum style --border rounded --border-foreground "$border_color" \
-            --foreground "$text_color" --bold \
-            --padding "1 5" --margin "1 2" --align center "$title"
-    else
-        gum style --border rounded --border-foreground "$border_color" \
-            --padding "1 5" --margin "1 2" --align center "$title"
-    fi
-}
-
-gum_notify() {
-    local level="$1"
-    shift
-    local msg="$*"
-    
-    if ! command -v gum >/dev/null 2>&1; then
-        case "$level" in
-            ok) echo "[✓] $msg" ;;
-            info) echo "[ℹ] $msg" ;;
-            warn) echo "[⚠] $msg" ;;
-            err) echo "[✗] $msg" >&2 ;;
-            *) echo "$msg" ;;
-        esac
-        return
-    fi
-    
-    case "$level" in
-        ok)
-            gum style --foreground "$GREEN" "✓ $msg"
-            ;;
-        info)
-            gum style --foreground "$BLUE" "ℹ $msg"
-            ;;
-        warn)
-            gum style --foreground "$YELLOW" "⚠ $msg"
-            ;;
-        err)
-            gum style --foreground "$RED" "✗ $msg"
-            ;;
-        *)
-            echo "$msg"
-            ;;
-    esac
-}
-
-action_show_status() {
-    local active="no"
-    local enabled="no"
-    service_is_active "$PRODUCT_SERVICE" && active="yes"
-    service_is_enabled "$PRODUCT_SERVICE" && enabled="yes"
-    print_header
-    ux_msg "Статус: $PRODUCT_ID
-Каталог:   $PRODUCT_DIR
-Сервис:    $PRODUCT_SERVICE
-Активен:   $active
-Автостарт: $enabled"
-    pause
-}
-
-action_show_config_paths() {
-    print_header
-    ux_msg "Конфигурация: $PRODUCT_ID
-config:   $PRODUCT_CONFIG_FILE
-list:     $PRODUCT_LIST_FILE
-exclude:  $PRODUCT_EXCLUDE_FILE"
-    pause
-}
-
-action_start() { service_manage start "$PRODUCT_SERVICE"; }
-action_stop() { service_manage stop "$PRODUCT_SERVICE"; }
-action_restart() { service_manage restart "$PRODUCT_SERVICE"; }
-
-action_enable() { service_autostart enable "$PRODUCT_SERVICE" >/dev/null 2>&1 || true; }
-action_disable() { service_autostart disable "$PRODUCT_SERVICE" >/dev/null 2>&1 || true; }
-
-product_choose() {
-    local which
-    which="$(ux_choose_one "Выберите продукт" "zapret" "zapret2" "Назад")" || return 1
-    [ "$which" = "Назад" ] && return 2
-    product_use "$which" || return 1
-    return 0
-}
-
-menu_manage_product() {
-    product_choose || return 0
-
+config_import_pick() {
+    local path
     while true; do
-        print_header
-        local act
-        act="$(ux_choose_one "Управление: $PRODUCT_ID" \
-            "Статус" \
-            "Запустить" \
-            "Остановить" \
-            "Перезапустить" \
-            "Включить автозагрузку" \
-            "Выключить автозагрузку" \
-            "Показать пути конфигурации" \
-            "Редактировать config" \
-            "Редактировать list" \
-            "Редактировать exclude" \
-            "Назад")" || return 0
+        print_header "Импорт конфига" "normal" >&2
+        echo "[TAB] автодополнение путей" >&2
+        echo "" >&2
+        read -e -p "Путь > " path
+        [ -z "$path" ] && return 1
 
-        case "$act" in
-            "Статус") action_show_status ;;
-            "Запустить")
-                ensure_hostlist_files >/dev/null 2>&1 || true
-                action_start || { ux_msg "Не удалось запустить $PRODUCT_ID"; pause; }
-                ;;
-            "Остановить") action_stop || { ux_msg "Не удалось остановить $PRODUCT_ID"; pause; } ;;
-            "Перезапустить")
-                ensure_hostlist_files >/dev/null 2>&1 || true
-                action_restart || { ux_msg "Не удалось перезапустить $PRODUCT_ID"; pause; }
-                ;;
-            "Включить автозагрузку") action_enable; ux_msg "Готово"; pause ;;
-            "Выключить автозагрузку") action_disable; ux_msg "Готово"; pause ;;
-            "Показать пути конфигурации") action_show_config_paths ;;
-            "Редактировать config") open_editor "$PRODUCT_CONFIG_FILE" ;;
-            "Редактировать list") open_editor "$PRODUCT_LIST_FILE" ;;
-            "Редактировать exclude") open_editor "$PRODUCT_EXCLUDE_FILE" ;;
-            "Назад") return 0 ;;
-        esac
+        path="${path/#\~/$HOME}"
+        path="${path%\"}"
+        path="${path#\"}"
+
+        if [ ! -e "$path" ]; then
+            gum_notify error "Файл не найден" >&2; pause >&2; continue
+        fi
+        if [ ! -f "$path" ]; then
+            gum_notify error "Это не файл" >&2; pause >&2; continue
+        fi
+
+        printf '%s\n' "$path"
+        return 0
     done
 }
 
-action_fix_units_zapret2() {
-    product_use zapret2 || return 1
-    if [ "$INIT_SYSTEM" != "systemd" ]; then
-        print_header
-        ux_msg "Этот пункт актуален только для systemd."
-        pause
-        return 0
-    fi
-    ux_confirm "Создать/обновить systemd units для zapret2?" || return 1
-    systemd_install_product_units || true
-    systemctl enable "zapret2.service" >/dev/null 2>&1 || true
-    systemctl enable "zapret2-list-update.timer" >/dev/null 2>&1 || true
-    systemctl daemon-reload >/dev/null 2>&1 || true
-    print_header
-    ux_msg "Готово: units для zapret2 применены."
+action_export_config() {
+    local path
+    path="$(ui_path_input "Куда сохранить config")" || return 1
+    [ -z "$path" ] && return 1
+    path="${path/#\~/$HOME}"
+    cp -f "$PRODUCT_CONFIG_FILE" "$path"
+    gum_notify info "Config сохранён"
     pause
 }
 
-action_uninstall_soft() {
-    # Does not touch other products. Backs up before removal.
-    backup_begin || true
-    backup_path "$PRODUCT_CONFIG_FILE" || true
-    backup_path "$PRODUCT_LIST_FILE" || true
-    backup_path "$PRODUCT_EXCLUDE_FILE" || true
-    backup_path "$PRODUCT_GAME_IPSET_FILE" || true
-    backup_path "$PRODUCT_VER_FILE" || true
-    backup_path "$PRODUCT_BINLINK" || true
-    backup_path "$STATE_FILE" || true
-
-    ux_confirm "Удалить $PRODUCT_ID из $PRODUCT_DIR и убрать $PRODUCT_BINLINK?" || return 1
-    service_manage stop "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
-
-    if [ -f "$PRODUCT_DIR/uninstall_easy.sh" ]; then
-        (cd "$PRODUCT_DIR" && yes "" | ./uninstall_easy.sh) >/dev/null 2>&1 || true
+action_service_status_live() {
+    print_header "systemd status" "normal"
+    if [ "$INIT_SYSTEM" != "systemd" ]; then
+        ux_msg "Доступно только для systemd"; pause; return 1
     fi
-    rm -rf "$PRODUCT_DIR" || true
-    rm -f "$PRODUCT_BINLINK" || true
-    rm -f "$PRODUCT_VER_FILE" || true
+    SYSTEMD_PAGER=cat systemctl status "$PRODUCT_SERVICE"
+    echo; gum_pause
+}
+
+action_service_logs() {
+    clear
+    if [ "$INIT_SYSTEM" != "systemd" ]; then
+        ux_msg "Доступно только для systemd"; pause; return 1
+    fi
+    journalctl -u "$PRODUCT_SERVICE" -f
+}
+
+ui_footer() {
+    ui_maybe_refresh
+    local size="${UI_COLS}x${UI_LINES}"
+    if [ "$UI_COMPACT" = true ]; then
+        gum style --foreground 240 "[compact] $size"
+    else
+        gum style --foreground 240 "[full] terminal=$size | menu-height=$GUM_MENU_HEIGHT"
+    fi
+}
+
+ui_refresh_layout() {
+    UI_COLS="$(tput cols 2>/dev/null || echo 0)"
+    UI_LINES="$(tput lines 2>/dev/null || echo 0)"
+    local VISIBLE_LINES=$((UI_LINES - RESERVED_LINES))
+
+    [ "$VISIBLE_LINES" -lt "${MENU_REQUIRED_LINES:-20}" ] && UI_COMPACT=true || UI_COMPACT=false
+
+    if [ "$UI_LINES" -ge 30 ]; then GUM_MENU_HEIGHT=14
+    elif [ "$UI_LINES" -ge 24 ]; then GUM_MENU_HEIGHT=10
+    elif [ "$UI_LINES" -ge 18 ]; then GUM_MENU_HEIGHT=7
+    else GUM_MENU_HEIGHT=5; fi
+
+    UI_DIRTY=false
+}
+
+ui_maybe_refresh() { [ "$UI_DIRTY" = true ] && ui_refresh_layout; }
+
+ui_choose_one() {
+    local title="$1"; shift
+    ui_maybe_refresh
+    gum choose --header "$title" --height "$GUM_MENU_HEIGHT" "$@"
+}
+
+ui_header() {
+    local mode_txt="$(state_load >/dev/null 2>&1; echo "$INSTALL_MODE")"
+    if $GUM_AVAILABLE; then
+        if [ "$UI_COMPACT" = true ]; then
+            gum style --foreground "$COLOR_CYAN" "zapret.installer | $mode_txt"
+        else
+            gum style --foreground "$COLOR_CYAN" "zapret.installer  |  режим: $mode_txt  |  zapret / zapret2 / оба"
+        fi
+    else
+        [ "$UI_COMPACT" = true ] && echo "zapret.installer | $mode_txt" || echo "zapret.installer  |  режим: $mode_txt  |  zapret / zapret2 / оба"
+    fi
+}
+
+print_header() {
+    local title="${1:-${NAME:-ZAPRET_INSTALLER}}"
+    local style="${2:-normal}"
+    ui_maybe_refresh; clear
+    gum_header "$title" "" "$style" >/dev/null 2>&1 || true
+    [ "$UI_COMPACT" = true ] && echo || ui_footer
+}
+
+product_status_text() {
+    local active="no" enabled="no"
+    service_is_active "$PRODUCT_SERVICE" && active="yes"
+    service_is_enabled "$PRODUCT_SERVICE" && enabled="yes"
+    cat <<EOF
+Продукт:   $PRODUCT_ID
+Каталог:   $PRODUCT_DIR
+Сервис:    $PRODUCT_SERVICE
+Активен:   $active
+Автостарт: $enabled
+EOF
+}
+
+action_show_status() { print_header "$PRODUCT_ID" "normal"; ux_msg "$(product_status_text)"; pause; }
+
+action_show_all_status() {
+    local out=""
+    print_header "Статус продуктов" "normal"
+    for p in zapret zapret2; do
+        product_use "$p" || continue
+        out+="$(product_status_text)\n\n"
+    done
+    ux_msg "${out:-Статус недоступен}"; pause
+}
+
+action_show_config_paths() {
+    print_header "$PRODUCT_ID" "normal"
+    ux_msg "Конфигурация: $PRODUCT_ID\nconfig:   $PRODUCT_CONFIG_FILE\nlist:     $PRODUCT_LIST_FILE\nexclude:  $PRODUCT_EXCLUDE_FILE"
+    pause
+}
+
+action_start()   { manage_service start; }
+action_stop()    { manage_service stop; }
+action_restart() { manage_service restart; }
+action_enable()  { manage_autostart enable >/dev/null 2>&1 || true; }
+action_disable() { manage_autostart disable >/dev/null 2>&1 || true; }
+
+product_choose() {
+    local which
+    which="$(ui_choose_one "Выберите продукт" "zapret" "zapret2" "Назад")" || return 1
+    [ "$which" = "Назад" ] && return 2
+    product_use "$which" || return 1; return 0
+}
+
+# --- УНИВЕРСАЛЬНАЯ ПОЧИНКА UNITS (Для zapret и zapret2) ---
+action_fix_units_universal() {
+    if [ "$INIT_SYSTEM" != "systemd" ]; then return 0; fi
+
+    local svc="$PRODUCT_SERVICE"
+    
+    # Жестко копируем из дистрибутива в систему
+    if [ -d "$PRODUCT_DIR/init.d/systemd" ]; then
+        cp -f "$PRODUCT_DIR/init.d/systemd/zapret.service" "/etc/systemd/system/${svc}.service" 2>/dev/null || true
+        cp -f "$PRODUCT_DIR/init.d/systemd/zapret-list-update.service" "/etc/systemd/system/${svc}-list-update.service" 2>/dev/null || true
+        cp -f "$PRODUCT_DIR/init.d/systemd/zapret-list-update.timer" "/etc/systemd/system/${svc}-list-update.timer" 2>/dev/null || true
+    fi
+
+    # Если это zapret2, меняем пути внутри файлов
+    if [ "$PRODUCT_ID" != "zapret" ]; then
+        sed -i "s|/opt/zapret|$PRODUCT_DIR|g" "/etc/systemd/system/${svc}.service" 2>/dev/null || true
+        sed -i "s|/opt/zapret|$PRODUCT_DIR|g" "/etc/systemd/system/${svc}-list-update.service" 2>/dev/null || true
+        sed -i "s|zapret\.service|${svc}.service|g" "/etc/systemd/system/${svc}-list-update.timer" 2>/dev/null || true
+        sed -i "s|zapret\.service|${svc}.service|g" "/etc/systemd/system/${svc}-list-update.service" 2>/dev/null || true
+    fi
+
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable "${svc}.service" >/dev/null 2>&1 || true
+    systemctl enable "${svc}-list-update.timer" >/dev/null 2>&1 || true
+}
+
+action_uninstall_soft() {
+    for f in "$PRODUCT_CONFIG_FILE" "$PRODUCT_LIST_FILE" "$PRODUCT_EXCLUDE_FILE" "$PRODUCT_GAME_IPSET_FILE" "$PRODUCT_VER_FILE" "$PRODUCT_BINLINK" "$STATE_FILE"; do
+        backup_path "$f" || true
+    done
+    ux_confirm "Удалить $PRODUCT_ID из $PRODUCT_DIR и убрать $PRODUCT_BINLINK?" || return 1
+    manage_service stop >/dev/null 2>&1 || true
+    [ -f "$PRODUCT_DIR/uninstall_easy.sh" ] && (cd "$PRODUCT_DIR" && yes "" | ./uninstall_easy.sh) >/dev/null 2>&1 || true
+    rm -rf "$PRODUCT_DIR" "$PRODUCT_BINLINK" "$PRODUCT_VER_FILE" "/etc/systemd/system/${PRODUCT_SERVICE}.service" || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
     ux_msg "Готово. $(backup_done_msg)"
 }
 
 action_switch_mode() {
-    backup_begin || true
-    backup_path "$STATE_FILE" || true
-
+    backup_begin || true; backup_path "$STATE_FILE" || true
     local mode
-    mode="$(ux_choose_one "Переключить режим (без переустановки)" "zapret" "zapret2" "both")" || return 1
-    INSTALL_MODE="$mode"
-    ACTIVE_PRODUCT="$mode"
+    mode="$(ui_choose_one "Переключить режим (без переустановки)" "zapret" "zapret2" "both")" || return 1
+    INSTALL_MODE="$mode"; ACTIVE_PRODUCT="$mode"
     state_save || true
     ux_msg "Режим сохранён: $INSTALL_MODE. $(backup_done_msg)"
 }
 
 action_install_mode_choose() {
+    local title="Выберите режим установки"
+    local opts=("Установить только zapret" "Установить только zapret2" "Установить оба (изолированно)")
+    if [ "$UI_COMPACT" = true ]; then
+        title="Режим установки"
+        opts=("zapret" "zapret2" "both")
+    fi
+
     local mode
-    mode="$(ux_choose_one "Выберите режим установки" "Установить только zapret" "Установить только zapret2" "Установить оба (изолированно)")" || return 1
+    # Правильный вызов (ESC выходит)
+    mode="$(ui_choose_one "$title" "${opts[@]}")" || return 1
+
     case "$mode" in
-        "Установить только zapret") INSTALL_MODE="zapret" ;;
-        "Установить только zapret2") INSTALL_MODE="zapret2" ;;
-        "Установить оба (изолированно)") INSTALL_MODE="both" ;;
+        "Установить только zapret"|"zapret") INSTALL_MODE="zapret" ;;
+        "Установить только zapret2"|"zapret2") INSTALL_MODE="zapret2" ;;
+        "Установить оба (изолированно)"|"both") INSTALL_MODE="both" ;;
         *) return 1 ;;
     esac
-    ACTIVE_PRODUCT="$INSTALL_MODE"
-    state_save || true
+    ACTIVE_PRODUCT="$INSTALL_MODE"; state_save || true
 }
 
 screen_compare_modes() {
-    print_header
-    ux_msg "Сравнение режимов (что будет установлено)
-
-zapret:
-  - каталог: /opt/zapret
-  - сервис:  zapret
-  - конфиг:  /opt/zapret/config  (совместимо со старыми установками)
-
-zapret2:
-  - каталог: /opt/zapret2
-  - сервис:  zapret2  (units создаём, если их нет)
-  - конфиг:  /opt/zapret2/config (отдельно, не конфликтует с zapret)
-
-оба:
-  - два изолированных каталога и сервиса
-  - конфиги/листы живут параллельно
-  - можно управлять каждым независимо"
+    print_header "Сравнение режимов" "normal"
+    ux_msg "Сравнение режимов (что будет установлено)\n\nzapret:\n  - каталог: /opt/zapret\n  - сервис:  zapret\n\nzapret2:\n  - каталог: /opt/zapret2\n  - сервис:  zapret2\n\nоба:\n  - два изолированных каталога и сервиса"
     pause
 }
 
-main_menu_gum() {
-    state_load
-    ensure_gum_best_effort >/dev/null 2>&1 || true
-
+menu_manage_product() {
+    product_choose || return 0
     while true; do
-        print_header
-        if term_too_small; then
-            ux_msg "Внимание: терминал маленький. Если меню отображается плохо — увеличьте окно."
-            echo ""
+        ui_maybe_refresh
+        print_header "Управление: $PRODUCT_ID" "normal"
+
+        local title="Управление: $PRODUCT_ID"
+        local opts=(
+            "Статус" "Запустить" "Остановить" "Перезапустить" 
+            "Включить автозагрузку" "Выключить автозагрузку" "Показать пути конфигурации" 
+            "Редактировать config" "Редактировать list" "Редактировать exclude" 
+            "Импортировать config" "Экспортировать config" "systemctl status" "journalctl logs" "Назад"
+        )
+        if [ "$UI_COMPACT" = true ]; then
+            title="Управление"
+            opts=(
+                "Статус" "Запустить" "Остановить" "Перезапустить" 
+                "Автозагрузка +" "Автозагрузка -" "Конфиг" 
+                "edit config" "edit list" "edit exclude" 
+                "import cfg" "export cfg" "statusctl" "logs" "Назад"
+            )
         fi
-        local action
-        action="$(ux_choose_one "Главное меню" \
-            "Установка / переустановка" \
-            "Управление продуктом" \
-            "Статус (оба продукта)" \
-            "Сравнение режимов" \
-            "Переключить режим (без переустановки)" \
-            "Починить/создать systemd units (zapret2)" \
-            "Проверка файлов hostlist" \
-            "Просмотр логов" \
-            "Удаление" \
-            "Выход")" || return 0
 
-        case "$action" in
-            "Установка / переустановка")
-                action_install_mode_choose || continue
-                print_header
-                ux_msg "Выбран режим: $INSTALL_MODE"
-                if ux_confirm "Начать установку сейчас?"; then
-                    case "$INSTALL_MODE" in
-                        zapret)
-                            product_use zapret && product_install_default
-                            ;;
-                        zapret2)
-                            product_use zapret2 && product_install_default
-                            ;;
-                        both)
-                            product_use zapret && product_install_default
-                            product_use zapret2 && product_install_default
-                            ;;
-                    esac
-                fi
-                pause
-                ;;
-            "Управление продуктом")
-                menu_manage_product
-                ;;
-            "Статус (оба продукта)")
-                for p in zapret zapret2; do
-                    product_use "$p" || continue
-                    action_show_status
-                done
-                ;;
-            "Сравнение режимов")
-                screen_compare_modes
-                ;;
-            "Переключить режим без переустановки")
-                action_switch_mode
-                pause
-                ;;
-            "Починить/создать systemd units (zapret2)")
-                action_fix_units_zapret2
-                ;;
-            "Проверка файлов hostlist")
-                print_header
-                ux_msg "Проверка hostlist-файлов (пока базовая):
-zapret:
-  /opt/zapret/ipset/zapret-hosts-user.txt
-  /opt/zapret/ipset/zapret-hosts-user-exclude.txt
-  /opt/zapret/ipset/ipset-discord.txt
-zapret2:
-  /opt/zapret2/ipset/zapret-hosts-user.txt
-  /opt/zapret2/ipset/zapret-hosts-user-exclude.txt"
-                ux_msg "Подсказка: в установке/repair мы автоматически создаём отсутствующие файлы."
-                pause
-                ;;
-            "Просмотр логов")
-                print_header
-                ux_msg "Логи установщика:
-  $(state_log_path)
+        local act
+        # Правильный вызов с обработкой ESC
+        act="$(ui_choose_one "$title" "${opts[@]}")" || return 0
 
-Состояние:
-  $STATE_FILE
-
-Backups:
-  $BACKUP_ROOT"
-                pause
-                ;;
-            "Удаление")
-                local whichu
-                whichu="$(ux_choose_one "Что удалить?" "zapret" "zapret2" "Отмена")" || continue
-                [ "$whichu" = "Отмена" ] && continue
-                product_use "$whichu" || continue
-                action_uninstall_soft || true
-                pause
-                ;;
-            "Выход")
-                clear
-                return 0
-                ;;
+        case "$act" in
+            "Статус") action_show_status ;;
+            "Запустить") action_start || { ux_msg "Ошибка запуска"; pause; } ;;
+            "Остановить") action_stop || { ux_msg "Ошибка остановки"; pause; } ;;
+            "Перезапустить") action_restart || { ux_msg "Ошибка"; pause; } ;;
+            "Включить автозагрузку"|"Автозагрузка +") action_enable; ux_msg "Готово"; pause ;;
+            "Выключить автозагрузку"|"Автозагрузка -") action_disable; ux_msg "Готово"; pause ;;
+            "Показать пути конфигурации"|"Конфиг") action_show_config_paths ;;
+            "Редактировать config"|"edit config") open_editor "$PRODUCT_CONFIG_FILE" ;;
+            "Редактировать list"|"edit list") open_editor "$PRODUCT_LIST_FILE" ;;
+            "Редактировать exclude"|"edit exclude") open_editor "$PRODUCT_EXCLUDE_FILE" ;;
+            "Импортировать config"|"import cfg") action_import_config ;;
+            "Экспортировать config"|"export cfg") action_export_config ;;
+            "systemctl status"|"statusctl") action_service_status_live ;;
+            "journalctl logs"|"logs") action_service_logs ;;
+            "Назад"|"") return 0 ;;
         esac
     done
 }
 
+menu_extra_tools() {
+    while true; do
+        ui_maybe_refresh
+        print_header "Дополнительно" "normal"
+
+        local title="Дополнительно"
+        local opts=(
+            "Сравнение режимов" "Переключить режим без переустановки" 
+            "Починить/создать systemd units (для выбранного)" "Просмотр логов и состояния" "Назад"
+        )
+        if [ "$UI_COMPACT" = true ]; then
+            title="Инструменты"
+            opts=("Сравнение" "Режим" "Починить Units" "Логи" "Назад")
+        fi
+
+        local act
+        act="$(ui_choose_one "$title" "${opts[@]}")" || return 0
+
+        case "$act" in
+            "Сравнение режимов"|"Сравнение") screen_compare_modes ;;
+            "Переключить режим без переустановки"|"Режим") action_switch_mode; gum_pause ;;
+            "Починить/создать systemd units (для выбранного)"|"Починить Units") 
+                product_choose || continue
+                action_fix_units_universal
+                ux_msg "Готово: units для $PRODUCT_ID обновлены/применены."
+                pause
+                ;;
+            "Просмотр логов и состояния"|"Логи")
+                print_header "Логи и состояние" "normal"
+                gum_panel "Логи" "Логи установщика: $(state_log_path)\nСостояние: $STATE_FILE" "info"
+                gum_pause ;;
+            "Назад"|"") return 0 ;;
+        esac
+    done
+}
+
+main_menu_gum() {
+    state_load; gum_init; ui_refresh_layout
+
+    while true; do
+        ui_maybe_refresh
+        print_header "Главное меню" "normal"
+
+        local title="Главное меню"
+        local opts=("Установка / переустановка" "Управление продуктом" "Статус" "Дополнительно" "Удаление" "Выход")
+        if [ "$UI_COMPACT" = true ]; then
+            title="Меню"
+            opts=("Установка" "Управление" "Статус" "Дополнительно" "Удаление" "Выход")
+        fi
+
+        local action
+        action="$(ui_choose_one "$title" "${opts[@]}")" || return 0
+
+        case "$action" in
+            "Установка"|"Установка / переустановка")
+                action_install_mode_choose || continue
+                print_header "Установка" "normal"
+                gum_notify info "Выбран режим: $INSTALL_MODE"
+                
+                if gum_confirm "Начать установку сейчас?"; then
+                    case "$INSTALL_MODE" in
+                        zapret) 
+                            product_use zapret && product_install_default
+                            action_fix_units_universal # Вызываем починку сразу после установки
+                            ;;
+                        zapret2) 
+                            product_use zapret2 && product_install_default
+                            action_fix_units_universal
+                            ;;
+                        both) 
+                            product_use zapret && product_install_default
+                            action_fix_units_universal
+                            product_use zapret2 && product_install_default
+                            action_fix_units_universal
+                            ;;
+                        Назад) continue ;;
+                    esac
+                fi
+                gum_pause ;;
+            "Управление"|"Управление продуктом") menu_manage_product ;;
+            "Статус") action_show_all_status ;;
+            "Дополнительно") menu_extra_tools ;;
+            "Удаление")
+                local whichu
+                whichu="$(ui_choose_one "Что удалить?" "zapret" "zapret2" "Отмена")" || continue
+                [ "$whichu" = "Отмена" -|| -z "$whichu" ] && continue
+                product_use "$whichu" || continue
+                action_uninstall_soft || true
+                gum_pause ;;
+            "Выход"|"") clear; return 0 ;;
+        esac
+    done
+}

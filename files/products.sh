@@ -49,6 +49,14 @@ product_use() {
     return 0
 }
 
+get_product_file() {
+    case "$1" in
+        config) echo "$PRODUCT_CONFIG_FILE" ;;
+        list)   echo "$PRODUCT_LIST_FILE" ;;
+        exclude) echo "$PRODUCT_EXCLUDE_FILE" ;;
+    esac
+}
+
 product_print_plan() {
     echo "Будет использовано:"
     echo "  - продукт: $PRODUCT_ID"
