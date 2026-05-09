@@ -1,203 +1,230 @@
 #!/bin/bash
+set -euo pipefail
 
-gh_api_latest_tarball_url() {
-    # Prints first tar.gz download URL for repo, without openwrt special-casing.
-    # Args: repo (e.g. bol-van/zapret)
+# =========================
+# CONFIGURATION
+# =========================
+declare -A PRODUCTS=(
+    ["zapret"]="bol-van/zapret zapret zapret.service /opt/zapret /opt/zapret-ver zapret"
+    ["zapret2"]="bol-van/zapret2 zapret2 zapret2.service /opt/zapret2 /opt/zapret2-ver zapret2"
+)
+
+PRODUCT_ID="${1:-zapret}"
+PRODUCT_REPO=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f1)
+PRODUCT_NAME=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f2)
+PRODUCT_SERVICE=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f3)
+PRODUCT_DIR=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f4)
+PRODUCT_VER_FILE=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f5)
+PRODUCT_BINLINK=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f6)
+
+PRODUCT_CFGS_REPO="https://github.com/Snowy-Fluffy/zapret.cfgs"
+PRODUCT_CFGS_DIR="/opt/$PRODUCT_ID/zapret.cfgs"
+PRODUCT_CONFIG_FILE="/opt/$PRODUCT_ID/config"
+
+# Цвета
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log() { echo -e "${GREEN}[INFO]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
+
+# =========================
+# GitHub helpers
+# =========================
+gh_latest_url() {
     local repo="$1"
-    curl -fsSL "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
-        | grep -E '"browser_download_url":' \
-        | grep -E 'tar\.gz"' \
-        | head -n 1 \
-        | cut -d '"' -f 4
+
+    curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | \
+    python3 -c '
+import sys, json
+
+data = json.load(sys.stdin)
+
+tag = data["tag_name"]
+
+print(f"https://github.com/'"$repo"'/archive/refs/tags/{tag}.tar.gz")
+'
 }
 
-install_product_release() {
-    local repo="$1"
-    local dir="$2"
-    local ver_file="$3"
+get_latest_version() {
+    curl -fsSL "https://api.github.com/repos/$PRODUCT_REPO/releases/latest" 2>/dev/null | \
+    grep '"tag_name"' | cut -d'"' -f4 | sed 's/^v//' || echo "unknown"
+}
 
-    local tmp
-    tmp="$(mktemp -d)" || return 1
-    local url
-    url="$(gh_api_latest_tarball_url "$repo")"
-    if [ -z "$url" ]; then
+# =========================
+# INSTALL CORE
+# =========================
+install_release() {
+    local tmp url extracted
+    tmp=$(mktemp -d) || return 1
+    url=$(gh_latest_url "$PRODUCT_REPO")
+    
+    [ -z "$url" ] && { rm -rf "$tmp"; return 1; }
+    
+    log "Скачиваю релиз $PRODUCT_ID..."
+    curl -fL "$url" -o "$tmp/release.tar.gz" || { rm -rf "$tmp"; return 1; }
+    
+    rm -rf "$PRODUCT_DIR" 2>/dev/null || true
+    mkdir -p /opt
+    
+    tar -xzf "$tmp/release.tar.gz" -C /opt || {
         rm -rf "$tmp"
         return 1
-    fi
-    curl -fL -o "$tmp/latest.tar.gz" "$url" || { rm -rf "$tmp"; return 1; }
+    }
 
-    rm -rf "$dir" || true
-    tar -xzf "$tmp/latest.tar.gz" -C /opt/ || { rm -rf "$tmp"; return 1; }
-
-    # Try to normalize extracted folder name: /opt/<name>-vX.Y -> /opt/<dirbase>
-    local base
-    base="$(basename "$dir")"
-    local extracted
-    extracted="$(ls -1 /opt | grep -E "^${base}-v" | sort -V | tail -n 1)"
-    if [ -n "$extracted" ] && [ -d "/opt/$extracted" ]; then
-        mv -f "/opt/$extracted" "$dir" || { rm -rf "$tmp"; return 1; }
-    fi
+    extracted=$(tar -tzf "$tmp/release.tar.gz" | head -1 | cut -d/ -f1)
+    extracted="/opt/$extracted"
 
     rm -rf "$tmp"
-    echo "release" >"$ver_file" 2>/dev/null || true
-    return 0
+    [ -z "$extracted" ] && return 1
+    
+    mv "$extracted" "$PRODUCT_DIR" || return 1
+    echo "release" > "$PRODUCT_VER_FILE"
+    log "$PRODUCT_ID установлен из релиза"
 }
 
-install_product_git() {
-    local repo="$1"
-    local dir="$2"
-    local ver_file="$3"
-    rm -rf "$dir" || true
-    git clone "https://github.com/$repo" "$dir" || return 1
-    echo "git" >"$ver_file" 2>/dev/null || true
-    return 0
+install_git() {
+    rm -rf "$PRODUCT_DIR"
+    log "Клонирую git-репозиторий $PRODUCT_REPO..."
+    git clone --depth 1 "https://github.com/$PRODUCT_REPO" "$PRODUCT_DIR" || return 1
+    echo "git" > "$PRODUCT_VER_FILE"
+    log "$PRODUCT_ID установлен из git"
 }
 
-install_cfgs_repo() {
+install_cfgs() {
     [ -d "$PRODUCT_CFGS_DIR" ] && return 0
-    git clone "$PRODUCT_CFGS_REPO" "$PRODUCT_CFGS_DIR" || return 1
+    git clone "$PRODUCT_CFGS_REPO" "$PRODUCT_CFGS_DIR" || warn "Не удалось клонировать конфиги"
 }
 
-ensure_file() {
-    local p="$1"
-    [ -f "$p" ] && return 0
-    mkdir -p "$(dirname "$p")" 2>/dev/null || true
-    touch "$p" 2>/dev/null || true
+ensure_lists() {
+    mkdir -p "$(dirname "$PRODUCT_CONFIG_FILE")"
+    touch "$PRODUCT_DIR/ipset/zapret-hosts-user.txt" || true
+    touch "$PRODUCT_DIR/ipset/ipset-game.txt" || true
+    touch "$PRODUCT_DIR/ipset/ipset-discord.txt" || true
 }
 
-ensure_hostlist_files() {
-    # Prevent journal spam "cannot access hostlist file".
-    ensure_file "$PRODUCT_LIST_FILE"
-    ensure_file "$PRODUCT_EXCLUDE_FILE"
-
-    # zapret uses extra lists in configs; create them if missing.
-    if [ "$PRODUCT_ID" = "zapret" ]; then
-        ensure_file "$PRODUCT_DIR/ipset/ipset-discord.txt"
-    fi
-}
-
-systemd_install_product_units() {
-    # Creates isolated systemd units for the active product context.
-    # For zapret we rely on upstream units; for zapret2 we create our own to avoid conflicts.
+# =========================
+# SYSTEMD
+# =========================
+systemd_install() {
     [ "$INIT_SYSTEM" = "systemd" ] || return 0
 
-    if [ "$PRODUCT_ID" = "zapret" ]; then
-        return 0
-    fi
+    mkdir -p /etc/systemd/system
 
-    if [ "$PRODUCT_ID" != "zapret2" ]; then
-        return 0
-    fi
+    local unit_path="/etc/systemd/system/${PRODUCT_SERVICE}.service"
+    local script_path="${PRODUCT_DIR}/init.d/sysv/${PRODUCT_SERVICE}"
 
-    # Backup potential existing units with same name (rare but safe)
-    backup_begin || true
-    backup_path "/etc/systemd/system/${PRODUCT_SERVICE}.service" || true
-    backup_path "/etc/systemd/system/${PRODUCT_SERVICE}-list-update.service" || true
-    backup_path "/etc/systemd/system/${PRODUCT_SERVICE}-list-update.timer" || true
-
-    mkdir -p /etc/systemd/system >/dev/null 2>&1 || true
-
-    cat >"/etc/systemd/system/${PRODUCT_SERVICE}.service" <<EOF
+    cat > "$unit_path" <<EOF
 [Unit]
+Description=$PRODUCT_ID network filtering service
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=forking
+Restart=no
+TimeoutSec=30
+KillMode=control-group
+GuessMainPID=no
+
+ExecStart=/bin/bash $script_path start
+ExecStop=/bin/bash $script_path stop
+
 RemainAfterExit=yes
-TimeoutSec=120sec
-ExecStart=${PRODUCT_DIR}/init.d/sysv/${PRODUCT_SERVICE} start
-ExecStop=${PRODUCT_DIR}/init.d/sysv/${PRODUCT_SERVICE} stop
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    cat >"/etc/systemd/system/${PRODUCT_SERVICE}-list-update.service" <<EOF
-[Unit]
-Description=${PRODUCT_SERVICE} ip/host list update
-
-[Service]
-Type=oneshot
-TimeoutSec=120sec
-ExecStart=${PRODUCT_DIR}/ipset/get_config.sh
-
-[Install]
-WantedBy=timers.target
-EOF
-
-    cat >"/etc/systemd/system/${PRODUCT_SERVICE}-list-update.timer" <<EOF
-[Unit]
-Description=${PRODUCT_SERVICE} ip/host list update timer
-
-[Timer]
-OnCalendar=*-*-2,4,6,8,10,12,14,16,18,20,22,24,26,28,30 00:00:00
-RandomizedDelaySec=86400
-Persistent=true
-Unit=${PRODUCT_SERVICE}-list-update.service
-
-[Install]
-WantedBy=timers.target
-EOF
-
     systemctl daemon-reload >/dev/null 2>&1 || true
-    return 0
+    systemctl enable "${PRODUCT_SERVICE}.service" >/dev/null 2>&1 || true
 }
 
-product_install_default() {
-    backup_begin || true
-    backup_path "$PRODUCT_DIR" || true
-    backup_path "$PRODUCT_VER_FILE" || true
-    backup_path "$PRODUCT_BINLINK" || true
-    backup_path "$STATE_FILE" || true
 
-    ux_msg "План установки"
-    product_print_plan
-    ux_confirm "Продолжить установку $PRODUCT_ID?" || return 1
 
-    install_dependencies >/dev/null 2>&1 || true
-
-    if ! install_product_release "$PRODUCT_REPO" "$PRODUCT_DIR" "$PRODUCT_VER_FILE"; then
-        install_product_git "$PRODUCT_REPO" "$PRODUCT_DIR" "$PRODUCT_VER_FILE" || {
-            ux_msg "Не удалось установить $PRODUCT_ID (release/git)."
-            return 1
-        }
+# =========================
+# MAIN INSTALL
+# =========================
+main_install() {
+    read -p "Установить $PRODUCT_ID? (y/N): " answer
+    [[ "$answer" =~ ^[Yy] ]] || exit 0
+    
+    # Backup
+    [ -d "$PRODUCT_DIR" ] && {
+        read -p "Найден $PRODUCT_DIR. Удалить? (y/N): " answer
+        [[ "$answer" =~ ^[Yy] ]] || exit 0
+        rm -rf "$PRODUCT_DIR"
+    }
+    
+    # Dependencies (упрощенно)
+    command -v iptables >/dev/null 2>/dev/null || apt-get install -y iptables ipset 2>/dev/null || true
+    
+    # Install
+    if ! install_release; then
+        warn "Релиз не удалось установить, использую git"
+        install_git || error "Не удалось установить $PRODUCT_ID"
     fi
+    
+    # Build
+    log "Сборка $PRODUCT_ID..."
 
-    # zapret upstream installer expects to be run in its dir
-    if [ -f "$PRODUCT_DIR/install_easy.sh" ]; then
-        (cd "$PRODUCT_DIR" && sed -i '238s/ask_yes_no N/ask_yes_no Y/' "$PRODUCT_DIR/common/installer.sh" 2>/dev/null || true)
-        (cd "$PRODUCT_DIR" && yes "" | ./install_easy.sh) || return 1
-        (cd "$PRODUCT_DIR" && sed -i '238s/ask_yes_no Y/ask_yes_no N/' "$PRODUCT_DIR/common/installer.sh" 2>/dev/null || true)
+    cd "$PRODUCT_DIR" || error "Не удалось открыть $PRODUCT_DIR"
+
+    make -j"$(nproc)" || error "Ошибка сборки $PRODUCT_ID"
+
+    nfq_bin=$(find "$PRODUCT_DIR" -type f \( -name "nfqws" -o -name "nfqws2" \) | head -n1)    
+
+    [ -n "$nfq_bin" ] || error "nfqws binary не найден"
+    [ -x "$nfq_bin" ] || error "nfqws binary не executable"
+    # Run installer
+    [ -f "$PRODUCT_DIR/install_easy.sh" ] && {
+        cd "$PRODUCT_DIR"
+        sed -i 's/ask_yes_no N/ask_yes_no Y/g' common/installer.sh 2>/dev/null || true
+        yes "" | ./install_easy.sh || true
+        sed -i 's/ask_yes_no Y/ask_yes_no N/g' common/installer.sh 2>/dev/null || true
+    }
+    
+    # Configs
+    install_cfgs
+    [ -d "$PRODUCT_CFGS_DIR/configurations" ] && {
+        cp -f "$PRODUCT_CFGS_DIR/configurations/general" "$PRODUCT_CONFIG_FILE" || true
+    }
+    [ -d "$PRODUCT_CFGS_DIR/bin" ] && {
+        mkdir -p "$PRODUCT_DIR/files/fake"
+        cp "$PRODUCT_CFGS_DIR/bin/"* "$PRODUCT_DIR/files/fake/" 2>/dev/null || true
+    }
+    
+    ensure_lists
+    ln -sf "/opt/zapret.installer/zapret-control.sh" "/bin/$PRODUCT_ID" 2>/dev/null || true
+    
+    systemd_install
+    systemctl restart "$PRODUCT_SERVICE" 2>/dev/null || true
+    
+    if product_health "$PRODUCT_SERVICE"; then
+        log "$PRODUCT_ID успешно установлен и работает!"
+    else
+        warn "$PRODUCT_ID установлен, но не активен (проверьте nft/ipset)"
     fi
-
-    systemd_install_product_units || true
-
-    install_cfgs_repo || true
-
-    # Seed config/list if missing (do not overwrite existing)
-    if [ ! -f "$PRODUCT_CONFIG_FILE" ] && [ -d "$PRODUCT_CFGS_DIR/configurations" ]; then
-        cp -f "$PRODUCT_CFGS_DIR/configurations/general" "$PRODUCT_CONFIG_FILE" 2>/dev/null || true
-    fi
-    if [ ! -f "$PRODUCT_LIST_FILE" ] && [ -d "$PRODUCT_CFGS_DIR/lists" ]; then
-        mkdir -p "$(dirname "$PRODUCT_LIST_FILE")" || true
-        cp -f "$PRODUCT_CFGS_DIR/lists/list-basic.txt" "$PRODUCT_LIST_FILE" 2>/dev/null || true
-    fi
-    [ -f "$PRODUCT_EXCLUDE_FILE" ] || { mkdir -p "$(dirname "$PRODUCT_EXCLUDE_FILE")" || true; touch "$PRODUCT_EXCLUDE_FILE" 2>/dev/null || true; }
-    [ -f "$PRODUCT_GAME_IPSET_FILE" ] || { mkdir -p "$(dirname "$PRODUCT_GAME_IPSET_FILE")" || true; touch "$PRODUCT_GAME_IPSET_FILE" 2>/dev/null || true; }
-
-    ensure_hostlist_files
-
-    ln -sf /opt/zapret.installer/zapret-control.sh "$PRODUCT_BINLINK" || true
-
-    if [ "$INIT_SYSTEM" = "systemd" ]; then
-        systemctl daemon-reload >/dev/null 2>&1 || true
-        systemctl enable "${PRODUCT_SERVICE}.service" >/dev/null 2>&1 || true
-        systemctl enable "${PRODUCT_SERVICE}-list-update.timer" >/dev/null 2>&1 || true
-    fi
-    service_manage restart "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
-
-    ux_msg "Установка завершена: $PRODUCT_ID. $(backup_done_msg)"
-    return 0
 }
 
+# =========================
+# UPDATE
+# =========================
+main_update() {
+    local ver_file_content
+    ver_file_content=$(cat "$PRODUCT_VER_FILE" 2>/dev/null || echo "")
+    
+    if [ "$ver_file_content" = "git" ]; then
+        cd "$PRODUCT_DIR" && git pull origin master || install_release
+    else
+        install_release || install_git
+    fi
+    
+    install_cfgs
+    systemctl restart "$PRODUCT_SERVICE" 2>/dev/null || true
+    
+    log "$PRODUCT_ID обновлен!"
+}

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export EDITOR="nano"     # или vim, nano, code, helix
+export VISUAL="$EDITOR"
 
 error_exit() {
     $TPUT_E
@@ -88,28 +90,76 @@ try_again() {
 
 open_editor() {
     local file_path="$1"
-    if [ ! -f "$file_path" ]; then
-        error_exit "Не найден файл '$file_path'"
-    fi
+    [ ! -f "$file_path" ] && error_exit "Не найден файл '$file_path'"
 
-    local editors_list=("$EDITOR" "$VISUAL" "nano" "vim" "nvim" "helix")
-    for editor in ${editors_list[@]}; do
-        if command -v "$editor"; then
+    local -a editors=()
+    [ -n "${EDITOR:-}" ] && editors+=("$EDITOR")
+    [ -n "${VISUAL:-}" ] && editors+=("$VISUAL")
+    editors+=("nano" "vim" "nvim" "helix" "micro" "joe")
+    
+    for editor in "${editors[@]}"; do
+        if command -v "$editor" >/dev/null 2>&1; then
+            log "Открываю $file_path в $editor"
             "$editor" "$file_path"
-            return
+            return 0
         fi
     done
-
-    echo "Не найдено ни одного текстового редактора из списка:"
-    echo "${editors_list[@]}"
-    echo "Установите один из вышеперечисленных редакторов"
-    echo ""
-    echo "Возврат в главное меню через 5 секунд..."
-    sleep 5
+    
+    error_exit "Не найдено ни одного редактора! Установите: nano vim nvim helix micro"
 }
 
 fast_exit(){
     $TPUT_E
     echo "Выход по запросу пользователя"
     exit 1
+}
+
+# =========================
+# HEALTH CHECK
+# =========================
+product_health() {
+    local svc1="zapret"
+    local svc2="zapret2"
+
+    local zapret_running=0
+    local zapret2_running=0
+
+    # zapret v1
+    if pgrep -x nfqws >/dev/null 2>&1; then
+        zapret_running=1
+    fi
+
+    # zapret2
+    if pgrep -x nfqws2 >/dev/null 2>&1; then
+        zapret2_running=1
+    fi
+
+    # systemd status (доп проверка)
+    local s1 s2
+    s1=$(systemctl is-active "$svc1" 2>/dev/null || echo "inactive")
+    s2=$(systemctl is-active "$svc2" 2>/dev/null || echo "inactive")
+
+    # return status (оба могут быть false одновременно)
+    [[ $zapret_running -eq 1 || $zapret2_running -eq 1 ]]
+}
+
+action_uninstall_soft() {
+    local p="$1"
+
+    local dir service binlink verfile
+    dir=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f4)
+    service=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f3)
+    binlink=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f6)
+    verfile=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f5)
+
+    ux_confirm "Удалить $p?" || return 1
+
+    systemctl stop "$service" >/dev/null 2>&1 || true
+
+    rm -rf "$dir" "$binlink" "$verfile" \
+        "/etc/systemd/system/${service}.service" || true
+
+    systemctl daemon-reload >/dev/null 2>&1 || true
+
+    ux_msg "Удалено: $p"
 }

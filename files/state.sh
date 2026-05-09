@@ -4,6 +4,7 @@ STATE_DIR="/etc/zapret.installer"
 STATE_FILE="$STATE_DIR/state.env"
 BACKUP_ROOT="$STATE_DIR/backups"
 LOG_DIR="$STATE_DIR/logs"
+BACKUP_DIR="$BACKUP_ROOT"
 
 state_mkdirs() {
     mkdir -p "$STATE_DIR" "$BACKUP_ROOT" "$LOG_DIR" || return 1

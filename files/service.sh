@@ -12,7 +12,7 @@ systemd_timer_exists() {
 
 manage_service() {
     local cmd="${1:-}"
-    local unit="zapret.service"
+    local unit="${PRODUCT_SERVICE}.service"
 
     case "$INIT_SYSTEM" in
         systemd)
@@ -55,7 +55,7 @@ manage_service() {
 
 manage_autostart() {
     local cmd="${1:-}"
-    local unit="zapret.service"
+    local unit="${PRODUCT_SERVICE}.service"
 
     case "$INIT_SYSTEM" in
         systemd)
