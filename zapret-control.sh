@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+BASE_DIR="/opt/zapret.installer"
 
 source "$BASE_DIR/files/utils.sh"
 source "$BASE_DIR/files/init.sh"

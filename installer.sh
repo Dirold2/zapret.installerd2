@@ -1,87 +1,107 @@
 #!/bin/sh
+set -e
 
-set -e  
+REPO_URL="https://github.com/Dirold2/zapret.installerd2"
+INSTALL_DIR="/opt/zapret.installer"
+BIN_LINK="/usr/local/bin/zapret"
 
 install_dependencies() {
     kernel="$(uname -s)"
 
-    if [ "$kernel" = "Linux" ]; then
-        [ -f /etc/os-release ] && . /etc/os-release || { echo "Не удалось определить ОС"; exit 1; }
-
-        SUDO="${SUDO:-}"
-
-        find_package_manager() {
-            case "$1" in
-                arch|artix|cachyos|endeavouros|manjaro|garuda) echo "$SUDO pacman -Syu --noconfirm && $SUDO pacman -S --noconfirm --needed git" ;;
-                debian|ubuntu|mint) echo "$SUDO apt update -y && $SUDO apt install -y git" ;;
-                fedora|almalinux|rocky|rhel|centos|oracle|redos) echo "if command -v dnf >/dev/null 2>&1; then $SUDO dnf update -y && $SUDO dnf install -y git; else $SUDO yum makecache -y && $SUDO yum install -y git; fi" ;;
-                void)      echo "$SUDO xbps-install -S && $SUDO xbps-install -y git" ;;
-                gentoo)    echo "$SUDO emerge --sync --quiet && $SUDO emerge --ask=n dev-vcs/git app-shells/bash" ;;
-                opensuse)  echo "$SUDO zypper refresh && $SUDO zypper install git" ;;
-                openwrt)   echo "$SUDO opkg update && $SUDO opkg install git git-http bash" ;;
-                altlinux)  echo "$SUDO apt-get update -y && $SUDO apt-get install -y git bash" ;;
-                alpine)    echo "$SUDO apk update && $SUDO apk add git bash" ;;
-                *)         echo "" ;;
-            esac
-        }
-
-        install_cmd="$(find_package_manager "$ID")"
-        if [ -z "$install_cmd" ] && [ -n "$ID_LIKE" ]; then
-            for like in $ID_LIKE; do
-                install_cmd="$(find_package_manager "$like")" && [ -n "$install_cmd" ] && break
-            done
-        fi
-
-        if [ -n "$install_cmd" ]; then
-            eval "$install_cmd"
-        else
-            echo "Неизвестная ОС: ${ID:-Неизвестно}"
-            echo "Установите git и bash самостоятельно."
-            sleep 2
-        fi
-    elif [ "$kernel" = "Darwin" ]; then
-        echo "macOS не поддерживается на данный момент."
+    [ -f /etc/os-release ] && . /etc/os-release || {
+        echo "Не удалось определить ОС"
         exit 1
+    }
+
+    SUDO="${SUDO:-}"
+
+    case "$ID" in
+        arch|manjaro|endeavouros|garuda|cachyos|artix)
+            $SUDO pacman -Sy --noconfirm git
+            ;;
+        debian|ubuntu|mint)
+            $SUDO apt update -y && $SUDO apt install -y git
+            ;;
+        fedora|rhel|centos|rocky|almalinux|oracle|redos)
+            if command -v dnf >/dev/null 2>&1; then
+                $SUDO dnf install -y git
+            else
+                $SUDO yum install -y git
+            fi
+            ;;
+        alpine)
+            $SUDO apk add git
+            ;;
+        openwrt)
+            $SUDO opkg update && $SUDO opkg install git git-http
+            ;;
+        *)
+            echo "Установите git вручную"
+            exit 1
+            ;;
+    esac
+}
+
+need_sudo() {
+    if [ "$(id -u)" -eq 0 ]; then
+        SUDO=""
+    elif command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+    elif command -v doas >/dev/null 2>&1; then
+        SUDO="doas"
     else
-        echo "Неизвестная ОС: $kernel"
-        echo "Установите git и bash самостоятельно."
-        sleep 2
+        echo "Нужен root/sudo/doas"
+        exit 1
     fi
 }
 
-if [ "$(awk '$2 == "/" {print $4}' /proc/mounts)" = "ro" ]; then
-    echo "Файловая система только для чтения, не могу продолжать."
-    exit 1
-fi
+install_git_if_needed() {
+    command -v git >/dev/null 2>&1 || install_dependencies
+}
 
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-else
-    if command -v sudo > /dev/null 2>&1; then
-        SUDO="sudo"
-    elif command -v doas > /dev/null 2>&1; then
-        SUDO="doas"
+clone_or_update() {
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        echo "[INFO] update repo"
+        cd "$INSTALL_DIR"
+        $SUDO git pull --rebase || {
+            echo "[WARN] reset repo"
+            cd /
+            $SUDO rm -rf "$INSTALL_DIR"
+            $SUDO git clone "$REPO_URL" "$INSTALL_DIR"
+        }
     else
-        echo "Скрипт не может быть выполнен не от имени суперпользователя."
-        exit 1
+        echo "[INFO] clone repo"
+        $SUDO rm -rf "$INSTALL_DIR"
+        $SUDO git clone "$REPO_URL" "$INSTALL_DIR"
     fi
-fi
+}
 
-if ! command -v git > /dev/null 2>&1; then
-    install_dependencies
-fi
+create_link() {
+    echo "[INFO] creating command: zapret"
 
-if [ ! -d "/opt/zapret.installer" ]; then
-    $SUDO git clone https://github.com/Snowy-Fluffy/zapret.installer.git /opt/zapret.installer
-else
-    cd /opt/zapret.installer || exit
-    if ! $SUDO git pull; then
-        echo "Ошибка при обновлении. Удаляю репозиторий и клонирую заново..."
-        $SUDO rm -rf /opt/zapret.installer
-        $SUDO git clone https://github.com/Snowy-Fluffy/zapret.installer.git /opt/zapret.installer
-    fi
-fi
+    $SUDO rm -f "$BIN_LINK"
 
-$SUDO chmod +x /opt/zapret.installer/zapret-control.sh
-exec bash /opt/zapret.installer/zapret-control.sh
+    $SUDO ln -s "$INSTALL_DIR/zapret-control.sh" "$BIN_LINK"
 
+    $SUDO chmod +x "$INSTALL_DIR/zapret-control.sh"
+    $SUDO chmod +x "$BIN_LINK"
+}
+
+main() {
+    need_sudo
+
+    echo "[INFO] checking git"
+    install_git_if_needed
+
+    echo "[INFO] installing to $INSTALL_DIR"
+
+    clone_or_update
+
+    create_link
+
+    echo ""
+    echo "[OK] installed successfully"
+    echo "[INFO] run: zapret"
+}
+
+main "$@"
