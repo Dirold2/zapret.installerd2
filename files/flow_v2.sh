@@ -404,7 +404,6 @@ menu_service() {
 action_download_fake_bins() {
     local target_dir="$PRODUCT_DIR/files/fake"
     local base_url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/bin"
-    
     local files=(
         "quic_initial_dbankcloud_ru.bin"
         "tls_clienthello_max_ru.bin"
@@ -422,10 +421,18 @@ action_download_fake_bins() {
 
     for file in "${files[@]}"; do
         echo -n "Загрузка $file... "
-        if curl -fsSL "$base_url/$file" -o "$target_dir/$file"; then
+        local tmp="$target_dir/.${file}.tmp"
+
+        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 60 \
+            "$base_url/$file" -o "$tmp" \
+            && [ -s "$tmp" ]; then
+            mv -f "$tmp" "$target_dir/$file"
             gum style --foreground 2 "OK"
         else
+            rm -f "$tmp"
             gum style --foreground 1 "Ошибка"
+            gum_notify error "Не удалось загрузить $file"
+            return 1
         fi
     done
 
