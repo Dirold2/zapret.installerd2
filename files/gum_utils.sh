@@ -5,16 +5,12 @@ GUM_AVAILABLE=false
 
 # Инициализация gum (best effort)
 gum_init() {
-    # Если gum уже есть, просто выходим
     if command -v gum >/dev/null 2>&1; then
         GUM_AVAILABLE=true
         return 0
     fi
 
     echo "==> Инструмент 'gum' не найден. Он необходим для работы интерфейса."
-    
-    # Спрашиваем пользователя, прежде чем что-то ставить
-    # (Используем обычный read, так как gum еще нет)
     read -p "Попробовать установить его автоматически? [Y/n] " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ && ! -z $REPLY ]]; then
@@ -31,43 +27,71 @@ gum_init() {
 
     [ -f /etc/os-release ] && . /etc/os-release
     
-    echo "Попытка установки пакета gum для $ID..."
+    echo "Подготовка к установке gum для $ID..."
 
     case "${ID:-}" in
+        debian|ubuntu|mint)
+            $SUDO mkdir -p /etc/apt/keyrings
+            curl -fsSL https://repo.charm.sh/apt/gpg.key | $SUDO gpg --dearmor -o /etc/apt/keyrings/charm.gpg
+            echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | $SUDO tee /etc/apt/sources.list.d/charm.list
+            $SUDO apt-get update && $SUDO apt-get install -y gum
+            ;;
+
+        fedora|almalinux|rocky|rhel|centos|oracle|redos)
+            echo '[charm]
+name=Charm
+baseurl=https://repo.charm.sh/yum/
+enabled=1
+gpgcheck=1
+gpgkey=https://repo.charm.sh/yum/gpg.key' | $SUDO tee /etc/yum.repos.d/charm.repo
+            $SUDO rpm --import https://repo.charm.sh/yum/gpg.key
+            if command -v dnf >/dev/null 2>&1; then
+                $SUDO dnf install -y gum
+            else
+                $SUDO yum install -y gum
+            fi
+            ;;
+
+        opensuse*|suse)
+            echo '[charm]
+name=Charm
+baseurl=https://repo.charm.sh/yum/
+enabled=1
+gpgcheck=1
+gpgkey=https://repo.charm.sh/yum/gpg.key' | $SUDO tee /etc/zypp/repos.d/charm.repo
+            $SUDO rpm --import https://repo.charm.sh/yum/gpg.key
+            $SUDO zypper refresh
+            $SUDO zypper install -y gum
+            ;;
+
         arch|artix|cachyos|endeavouros|manjaro|garuda)
             $SUDO pacman -Sy --noconfirm --needed gum
             ;;
-        debian|ubuntu|mint)
-            echo "Добавление репозитория Charm (charm.sh)..."
-            $SUDO mkdir -p /etc/apt/keyrings
-            # Скачиваем ключ и добавляем репозиторий
-            curl -fsSL https://repo.charm.sh/apt/gpg.key | $SUDO gpg --dearmor -o /etc/apt/keyrings/charm.gpg 2>/dev/null
-            echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | $SUDO tee /etc/apt/sources.list.d/charm.list >/dev/null
-            
-            echo "Обновление списков пакетов..."
-            $SUDO apt-get update -y >/dev/null
-            $SUDO apt-get install -y gum
-            ;;
-        fedora|almalinux|rocky|rhel|centos|oracle|redos)
-            $SUDO dnf install -y gum || $SUDO yum install -y gum
-            ;;
-        opensuse*)
-            $SUDO zypper --non-interactive install gum
-            ;;
+
         alpine)
             $SUDO apk add gum
             ;;
+
+        freebsd)
+            $SUDO pkg install gum
+            ;;
+
         *)
-            echo "Ошибка: ОС '$ID' не поддерживается для автоустановки."
-            echo "Установите gum вручную: https://github.com/charmbracelet/gum"
+            # Если Brew установлен на Linux
+            if command -v brew >/dev/null 2>&1; then
+                brew install gum
+            else
+                echo "✖ ОС '$ID' не поддерживается автоматически."
+                return 1
+            fi
             ;;
     esac
 
     if command -v gum >/dev/null 2>&1; then
-        echo "✔ Gum успешно установлен."
+        echo "✔ Gum успешно установлен!"
         GUM_AVAILABLE=true
     else
-        echo "✖ Не удалось установить gum автоматически."
+        echo "✖ Ошибка при установке gum."
         GUM_AVAILABLE=false
         return 1
     fi
