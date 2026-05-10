@@ -24,7 +24,6 @@ fi
 check_sudo
 trap fast_exit SIGINT
 
-gum_init
 check_openwrt
 check_tput && tput bold || true
 check_fs
