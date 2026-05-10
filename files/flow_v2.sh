@@ -456,6 +456,30 @@ menu_service() {
     done
 }
 
+action_run_bench_full() {
+    local cfg="${1:-$PRODUCT_CONFIG_FILE}"
+    local bench="$BASE_DIR/files/bench_zapret.sh"
+
+    [ -f "$bench" ] || {
+        gum_notify error "bench_zapret.sh не найден"
+        return 1
+    }
+
+    bash "$bench" "$cfg"
+}
+
+action_run_bench_summary() {
+    local cfg="${1:-$PRODUCT_CONFIG_FILE}"
+    local bench="$BASE_DIR/files/bench_zapret.sh"
+
+    [ -f "$bench" ] || {
+        gum_notify error "bench_zapret.sh не найден"
+        return 1
+    }
+
+    SUMMARY_ONLY=1 MAX_DOMAIN_TESTS=20 bash "$bench" "$cfg"
+}
+
 menu_config() {
     while true; do
         clear
