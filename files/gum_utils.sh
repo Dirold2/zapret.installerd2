@@ -33,8 +33,14 @@ gum_init() {
         debian|ubuntu|mint)
             $SUDO mkdir -p /etc/apt/keyrings
             curl -fsSL https://repo.charm.sh/apt/gpg.key | $SUDO gpg --dearmor -o /etc/apt/keyrings/charm.gpg
-            echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | $SUDO tee /etc/apt/sources.list.d/charm.list
-            $SUDO apt-get update && $SUDO apt-get install -y gum
+            echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | $SUDO tee /etc/apt/sources.list.d/charm.list >/dev/null
+
+            if $SUDO apt-get update && $SUDO apt-get install -y gum; then
+                :
+            else
+                echo "⚠️ Установка через repo.charm.sh не удалась, пробую go install..."
+                install_gum_with_go || return 1
+            fi
             ;;
 
         fedora|almalinux|rocky|rhel|centos|oracle|redos)
@@ -95,6 +101,27 @@ gpgkey=https://repo.charm.sh/yum/gpg.key' | $SUDO tee /etc/zypp/repos.d/charm.re
         GUM_AVAILABLE=false
         return 1
     fi
+}
+
+install_gum_with_go() {
+    if ! command -v go >/dev/null 2>&1; then
+        echo "✖ Go не установлен, не могу поставить gum через go install."
+        return 1
+    fi
+
+    export GOBIN="${GOBIN:-$HOME/go/bin}"
+    mkdir -p "$GOBIN"
+
+    if go install github.com/charmbracelet/gum@latest; then
+        export PATH="$GOBIN:$PATH"
+        if command -v gum >/dev/null 2>&1; then
+            echo "✔ Gum успешно установлен через Go!"
+            return 0
+        fi
+    fi
+
+    echo "✖ Не удалось установить gum через Go."
+    return 1
 }
 
 # ============================================================================
