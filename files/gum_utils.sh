@@ -5,43 +5,66 @@ GUM_AVAILABLE=false
 
 # Инициализация gum (best effort)
 gum_init() {
+    # Если gum уже есть, просто выходим
     if command -v gum >/dev/null 2>&1; then
         GUM_AVAILABLE=true
         return 0
     fi
 
-    # Best effort install via package manager
+    echo "==> Инструмент 'gum' не найден. Он необходим для работы интерфейса."
+    
+    # Спрашиваем пользователя, прежде чем что-то ставить
+    # (Используем обычный read, так как gum еще нет)
+    read -p "Попробовать установить его автоматически? [Y/n] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ && ! -z $REPLY ]]; then
+        GUM_AVAILABLE=false
+        return 1
+    fi
+
     local SUDO=""
     if [ "$(id -u)" -ne 0 ]; then
-        command -v sudo >/dev/null 2>&1 && SUDO="sudo"
-        command -v doas >/dev/null 2>&1 && SUDO="doas"
+        if command -v sudo >/dev/null 2>&1; then SUDO="sudo"
+        elif command -v doas >/dev/null 2>&1; then SUDO="doas"
+        fi
     fi
 
     [ -f /etc/os-release ] && . /etc/os-release
+    
+    echo "Попытка установки пакета gum для $ID..."
+
     case "${ID:-}" in
         arch|artix|cachyos|endeavouros|manjaro|garuda)
-            $SUDO pacman -S --noconfirm --needed gum >/dev/null 2>&1 || true
+            $SUDO pacman -Sy --noconfirm --needed gum
             ;;
         debian|ubuntu|mint)
-            $SUDO apt-get update -y >/dev/null 2>&1 || true
-            $SUDO apt-get install -y gum >/dev/null 2>&1 || true
+            # Для Debian/Ubuntu gum часто нет в стандартных репозиториях. 
+            # В идеале нужно добавлять репо Charm, но попробуем базу:
+            $SUDO apt-get update -y && $SUDO apt-get install -y gum
             ;;
         fedora|almalinux|rocky|rhel|centos|oracle|redos)
-            if command -v dnf >/dev/null 2>&1; then
-                $SUDO dnf install -y gum >/dev/null 2>&1 || true
-            elif command -v yum >/dev/null 2>&1; then
-                $SUDO yum install -y gum >/dev/null 2>&1 || true
-            fi
+            $SUDO dnf install -y gum || $SUDO yum install -y gum
             ;;
-        opensuse)
-            $SUDO zypper install -y gum >/dev/null 2>&1 || true
+        opensuse*)
+            $SUDO zypper --non-interactive install gum
             ;;
         alpine)
-            $SUDO apk add gum >/dev/null 2>&1 || true
+            $SUDO apk add gum
+            ;;
+        *)
+            echo "Ошибка: ОС '$ID' не поддерживается для автоустановки."
+            echo "Установите gum вручную: https://github.com/charmbracelet/gum"
             ;;
     esac
 
-    command -v gum >/dev/null 2>&1 && GUM_AVAILABLE=true
+    if command -v gum >/dev/null 2>&1; then
+        echo "✔ Gum успешно установлен."
+        GUM_AVAILABLE=true
+    else
+        echo "✖ Не удалось установить gum автоматически."
+        GUM_AVAILABLE=false
+        return 1
+    fi
 }
 
 # ============================================================================
