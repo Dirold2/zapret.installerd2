@@ -12,61 +12,6 @@ GUM_MENU_HEIGHT=10
 on_resize() { UI_DIRTY=true; }
 trap 'on_resize' WINCH
 
-ui_refresh_layout() {
-    UI_COLS="$(tput cols 2>/dev/null || echo 0)"
-    UI_LINES="$(tput lines 2>/dev/null || echo 0)"
-
-    local visible_lines="$UI_LINES"
-    [ "$visible_lines" -lt "${MENU_REQUIRED_LINES:-20}" ] && UI_COMPACT=true || UI_COMPACT=false
-
-    if [ "$UI_LINES" -ge 30 ]; then
-        GUM_MENU_HEIGHT=14
-    elif [ "$UI_LINES" -ge 24 ]; then
-        GUM_MENU_HEIGHT=10
-    elif [ "$UI_LINES" -ge 18 ]; then
-        GUM_MENU_HEIGHT=7
-    else
-        GUM_MENU_HEIGHT=5
-    fi
-
-    UI_DIRTY=false
-}
-
-ui_maybe_refresh() { [ "$UI_DIRTY" = true ] && ui_refresh_layout; }
-
-ui_hr() {
-    gum style --foreground 240 "$(printf '─%.0s' $(seq 1 "${COLUMNS:-80}"))"
-}
-
-ui_choose_one() {
-    local title="$1"; shift
-    ui_maybe_refresh
-
-    gum choose \
-        --header "$(ui_header | tr '\n' ' ')" \
-        --height "$GUM_MENU_HEIGHT" \
-        "$@"
-}
-
-ui_header() {
-    local status
-    status="$(ui_products_status_line || true)"
-
-    echo
-    echo "$status"
-    echo
-}
-
-print_header() {
-    local title="${1:-${NAME:-ZAPRET_INSTALLER}}"
-    local style="${2:-normal}"
-
-    ui_maybe_refresh
-    clear
-
-    gum_header "$title" "" "$style" >/dev/null 2>&1 || true
-}
-
 action_import_config() {
     local imported
     imported="$(config_import_pick)" || return 1
@@ -456,30 +401,6 @@ menu_service() {
     done
 }
 
-action_run_bench_full() {
-    local cfg="${1:-$PRODUCT_CONFIG_FILE}"
-    local bench="$BASE_DIR/files/bench_zapret.sh"
-
-    [ -f "$bench" ] || {
-        gum_notify error "bench_zapret.sh не найден"
-        return 1
-    }
-
-    bash "$bench" "$cfg"
-}
-
-action_run_bench_summary() {
-    local cfg="${1:-$PRODUCT_CONFIG_FILE}"
-    local bench="$BASE_DIR/files/bench_zapret.sh"
-
-    [ -f "$bench" ] || {
-        gum_notify error "bench_zapret.sh не найден"
-        return 1
-    }
-
-    SUMMARY_ONLY=1 MAX_DOMAIN_TESTS=20 bash "$bench" "$cfg"
-}
-
 menu_config() {
     while true; do
         clear
@@ -491,8 +412,6 @@ menu_config() {
             "Импорт" \
             "Экспорт" \
             "Пути" \
-            "Проверить config (кратко)" \
-            "Проверить config (полностью)" \
             "Установить config из Snowy-Fluffy" \
             "Установить list из Snowy-Fluffy" \
             "Установить ipset list из Snowy-Fluffy" \
@@ -505,8 +424,6 @@ menu_config() {
             "Импорт") action_import_config ;;
             "Экспорт") action_export_config ;;
             "Пути") action_show_config_paths ;;
-            "Проверить config (кратко)") action_run_bench_summary "$PRODUCT_CONFIG_FILE"; gum_pause ;;
-            "Проверить config (полностью)") action_run_bench_full "$PRODUCT_CONFIG_FILE"; gum_pause ;;
             "Установить config из Snowy-Fluffy") action_install_cfgs_config ;;
             "Установить list из Snowy-Fluffy") action_install_cfgs_list ;;
             "Установить ipset list из Snowy-Fluffy") action_install_cfgs_ipset_list ;;

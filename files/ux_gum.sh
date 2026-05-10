@@ -109,6 +109,61 @@ ui_path_input() {
     done
 }
 
+ui_refresh_layout() {
+    UI_COLS="$(tput cols 2>/dev/null || echo 0)"
+    UI_LINES="$(tput lines 2>/dev/null || echo 0)"
+
+    local visible_lines="$UI_LINES"
+    [ "$visible_lines" -lt "${MENU_REQUIRED_LINES:-20}" ] && UI_COMPACT=true || UI_COMPACT=false
+
+    if [ "$UI_LINES" -ge 30 ]; then
+        GUM_MENU_HEIGHT=14
+    elif [ "$UI_LINES" -ge 24 ]; then
+        GUM_MENU_HEIGHT=10
+    elif [ "$UI_LINES" -ge 18 ]; then
+        GUM_MENU_HEIGHT=7
+    else
+        GUM_MENU_HEIGHT=5
+    fi
+
+    UI_DIRTY=false
+}
+
+ui_maybe_refresh() { [ "$UI_DIRTY" = true ] && ui_refresh_layout; }
+
+ui_hr() {
+    gum style --foreground 240 "$(printf '─%.0s' $(seq 1 "${COLUMNS:-80}"))"
+}
+
+ui_choose_one() {
+    local title="$1"; shift
+    ui_maybe_refresh
+
+    gum choose \
+        --header "$(ui_header | tr '\n' ' ')" \
+        --height "$GUM_MENU_HEIGHT" \
+        "$@"
+}
+
+ui_header() {
+    local status
+    status="$(ui_products_status_line || true)"
+
+    echo
+    echo "$status"
+    echo
+}
+
+print_header() {
+    local title="${1:-${NAME:-ZAPRET_INSTALLER}}"
+    local style="${2:-normal}"
+
+    ui_maybe_refresh
+    clear
+
+    gum_header "$title" "" "$style" >/dev/null 2>&1 || true
+}
+
 # Быстрые уведомления
 notify_ok() { gum_notify ok "$1"; }
 notify_info() { gum_notify info "$1"; }
