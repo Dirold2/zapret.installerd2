@@ -38,9 +38,15 @@ gum_init() {
             $SUDO pacman -Sy --noconfirm --needed gum
             ;;
         debian|ubuntu|mint)
-            # Для Debian/Ubuntu gum часто нет в стандартных репозиториях. 
-            # В идеале нужно добавлять репо Charm, но попробуем базу:
-            $SUDO apt-get update -y && $SUDO apt-get install -y gum
+            echo "Добавление репозитория Charm (charm.sh)..."
+            $SUDO mkdir -p /etc/apt/keyrings
+            # Скачиваем ключ и добавляем репозиторий
+            curl -fsSL https://repo.charm.sh/apt/gpg.key | $SUDO gpg --dearmor -o /etc/apt/keyrings/charm.gpg 2>/dev/null
+            echo "deb [signed-by=/etc/apt/keyrings/charm.gpg] https://repo.charm.sh/apt/ * *" | $SUDO tee /etc/apt/sources.list.d/charm.list >/dev/null
+            
+            echo "Обновление списков пакетов..."
+            $SUDO apt-get update -y >/dev/null
+            $SUDO apt-get install -y gum
             ;;
         fedora|almalinux|rocky|rhel|centos|oracle|redos)
             $SUDO dnf install -y gum || $SUDO yum install -y gum
