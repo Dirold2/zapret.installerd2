@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# ux_gum.sh - UI функции с использованием gum_utils.sh
-# Этот файл обеспечивает обратную совместимость со старым кодом
-
-# Обертки для обратной совместимости
 ux_confirm() {
     gum_confirm "$1"
 }
@@ -27,12 +23,10 @@ pause() {
     gum_pause "Нажмите Enter для возврата в меню..."
 }
 
-# Улучшенная функция заголовка
 print_header() {
     local title="${1:-}"
     local style="${2:-normal}"
 
-    # Если заголовок не передан, используем дефолтный
     if [[ -z "$title" ]]; then
         if [[ -n "${NAME:-}" ]]; then
             title="$NAME"
@@ -50,13 +44,11 @@ resolve_config_path() {
     input="${input/#\~/$HOME}"
     input="$(realpath -m "$input" 2>/dev/null || echo "$input")"
 
-    # Если это уже файл
     if [ -f "$input" ]; then
         printf '%s\n' "$input"
         return 0
     fi
 
-    # Популярные расширения
     for ext in "" ".conf" ".config" ".txt"; do
         if [ -f "${input}${ext}" ]; then
             printf '%s\n' "${input}${ext}"
@@ -64,7 +56,6 @@ resolve_config_path() {
         fi
     done
 
-    # Если это директория
     if [ -d "$input" ]; then
 
         local candidate
@@ -113,8 +104,11 @@ ui_refresh_layout() {
     UI_COLS="$(tput cols 2>/dev/null || echo 0)"
     UI_LINES="$(tput lines 2>/dev/null || echo 0)"
 
-    local visible_lines="$UI_LINES"
-    [ "$visible_lines" -lt "${MENU_REQUIRED_LINES:-20}" ] && UI_COMPACT=true || UI_COMPACT=false
+    if [ "$UI_LINES" -le 20 ]; then
+        UI_COMPACT=true
+    else
+        UI_COMPACT=false
+    fi
 
     if [ "$UI_LINES" -ge 30 ]; then
         GUM_MENU_HEIGHT=14
@@ -155,16 +149,20 @@ ui_header() {
 }
 
 print_header() {
-    local title="${1:-${NAME:-ZAPRET_INSTALLER}}"
-    local style="${2:-normal}"
-
     ui_maybe_refresh
     clear
 
-    gum_header "$title" "" "$style" >/dev/null 2>&1 || true
+    local title="${1:-${NAME:-ZAPRET_INSTALLER}}"
+    local style="${2:-normal}"
+
+    if [ "$UI_COMPACT" = true ]; then
+        gum style --bold --foreground 8 " $title"
+        return 0
+    fi
+
+    gum_header "$title" "" "$style" || true
 }
 
-# Быстрые уведомления
 notify_ok() { gum_notify ok "$1"; }
 notify_info() { gum_notify info "$1"; }
 notify_warn() { gum_notify warn "$1"; }

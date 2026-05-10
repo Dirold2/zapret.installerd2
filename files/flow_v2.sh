@@ -401,32 +401,81 @@ menu_service() {
     done
 }
 
+action_download_fake_bins() {
+    local target_dir="$PRODUCT_DIR/files/fake"
+    local base_url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/bin"
+    
+    local files=(
+        "quic_initial_dbankcloud_ru.bin"
+        "tls_clienthello_max_ru.bin"
+    )
+
+    print_header "Загрузка fake-бинарников" "normal"
+
+    if [ ! -d "$target_dir" ]; then
+        if gum_confirm "Директория $target_dir не найдена. Создать?"; then
+            mkdir -p "$target_dir" || { gum_notify error "Нет прав на создание папки"; return 1; }
+        else
+            return 1
+        fi
+    fi
+
+    for file in "${files[@]}"; do
+        echo -n "Загрузка $file... "
+        if curl -fsSL "$base_url/$file" -o "$target_dir/$file"; then
+            gum style --foreground 2 "OK"
+        else
+            gum style --foreground 1 "Ошибка"
+        fi
+    done
+
+    gum_notify info "Файлы обновлены в $target_dir"
+    pause
+}
+
 menu_config() {
     while true; do
         clear
         local act
-        act="$(ui_choose_one "Конфиги" \
+        act="$(ui_choose_one "КОНФИГУРАЦИЯ" \
             "Редактировать config" \
             "Редактировать list" \
             "Редактировать exclude" \
-            "Импорт" \
-            "Экспорт" \
-            "Пути" \
-            "Установить config из Snowy-Fluffy" \
-            "Установить list из Snowy-Fluffy" \
-            "Установить ipset list из Snowy-Fluffy" \
+            "Импорт конфига" \
+            "Экспорт конфига" \
+            "Показать пути" \
+            "Внешние источники" \
             "Назад")" || return 0
 
         case "$act" in
-            "Редактировать config") open_editor "$PRODUCT_CONFIG_FILE" ;;
-            "Редактировать list") open_editor "$PRODUCT_LIST_FILE" ;;
+            "Редактировать config")  open_editor "$PRODUCT_CONFIG_FILE" ;;
+            "Редактировать list")    open_editor "$PRODUCT_LIST_FILE" ;;
             "Редактировать exclude") open_editor "$PRODUCT_EXCLUDE_FILE" ;;
-            "Импорт") action_import_config ;;
-            "Экспорт") action_export_config ;;
-            "Пути") action_show_config_paths ;;
-            "Установить config из Snowy-Fluffy") action_install_cfgs_config ;;
-            "Установить list из Snowy-Fluffy") action_install_cfgs_list ;;
-            "Установить ipset list из Snowy-Fluffy") action_install_cfgs_ipset_list ;;
+            "Импорт конфига")        action_import_config ;;
+            "Экспорт конфига")       action_export_config ;;
+            "Показать пути")         action_show_config_paths ;;
+            "Внешние источники")     menu_external_sources ;;
+            "Назад")                 return 0 ;;
+        esac
+    done
+}
+
+menu_external_sources() {
+    while true; do
+        clear
+        local act
+        act="$(ui_choose_one "Внешние источники (Download/Sync)" \
+            "Скачать Fake бинарники (Flowseal)" \
+            "Установить config (Snowy-Fluffy)" \
+            "Установить list (Snowy-Fluffy)" \
+            "Установить ipset list (Snowy-Fluffy)" \
+            "Назад")" || return 0
+
+        case "$act" in
+            "Скачать Fake бинарники (Flowseal)") action_download_fake_bins ;;
+            "Установить config (Snowy-Fluffy)")  action_install_cfgs_config ;;
+            "Установить list (Snowy-Fluffy)")    action_install_cfgs_list ;;
+            "Установить ipset list (Snowy-Fluffy)") action_install_cfgs_ipset_list ;;
             "Назад") return 0 ;;
         esac
     done
