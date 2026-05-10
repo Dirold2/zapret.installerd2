@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# BASE_DIR="/opt/zapret.installer"
-
-BASE_DIR="/home/dirold2/dev/zapret.installerd2"
+BASE_DIR="/opt/zapret.installer"
 
 source "$BASE_DIR/files/utils.sh"
 source "$BASE_DIR/files/init.sh"
