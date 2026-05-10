@@ -467,7 +467,8 @@ menu_config() {
             "Импорт" \
             "Экспорт" \
             "Пути" \
-            "Проверить config" \
+            "Проверить config (кратко)" \
+            "Проверить config (полностью)" \
             "Установить config из Snowy-Fluffy" \
             "Установить list из Snowy-Fluffy" \
             "Установить ipset list из Snowy-Fluffy" \
@@ -480,7 +481,8 @@ menu_config() {
             "Импорт") action_import_config ;;
             "Экспорт") action_export_config ;;
             "Пути") action_show_config_paths ;;
-            "Проверить config") action_run_tests ;;
+            "Проверить config (кратко)") action_run_bench_summary "$PRODUCT_CONFIG_FILE"; gum_pause ;;
+            "Проверить config (полностью)") action_run_bench_full "$PRODUCT_CONFIG_FILE"; gum_pause ;;
             "Установить config из Snowy-Fluffy") action_install_cfgs_config ;;
             "Установить list из Snowy-Fluffy") action_install_cfgs_list ;;
             "Установить ipset list из Snowy-Fluffy") action_install_cfgs_ipset_list ;;
