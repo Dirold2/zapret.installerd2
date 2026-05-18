@@ -147,26 +147,41 @@ action_uninstall_soft() {
     local p="$1"
     [ -z "$p" ] && return 1
 
-    product_use "$p" || { ux_msg "Ошибка: продукт $p не найден"; return 1; }
+    if [ -z "${PRODUCTS[$p]:-}" ]; then
+        gum_notify error "Данные продукта $p не найдены в массиве PRODUCTS"
+        return 1
+    fi
 
-    gum_confirm "Полностью удалить $p и все его файлы?" || return 1
+    local dir service binlink verfile
+    dir=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f4)
+    service=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f3)
+    verfile=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f5)
+    binlink=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f6)
 
-    echo "Остановка службы $PRODUCT_SERVICE..."
-    systemctl stop "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
-    systemctl disable "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
+    if ! gum_confirm "Полностью удалить $p?"; then
+        return 0
+    fi
+
+    echo "Остановка сервиса ${service}..."
+    systemctl stop "${service}" >/dev/null 2>&1 || true
+    systemctl disable "${service}" >/dev/null 2>&1 || true
 
     echo "Удаление файлов..."
 
-    [ -n "$PRODUCT_DIR" ] && rm -rf "$PRODUCT_DIR"
-    [ -n "$PRODUCT_BIN_LINK" ] && rm -f "$PRODUCT_BIN_LINK"
-    [ -n "$PRODUCT_VER_FILE" ] && rm -f "$PRODUCT_VER_FILE"
+    [ -n "${dir:-}" ]     && rm -rf "$dir"
+    [ -n "${binlink:-}" ] && rm -f "$binlink"
+    [ -n "${verfile:-}" ] && rm -f "$verfile"
 
-    rm -f "/etc/systemd/system/${PRODUCT_SERVICE}.service" || true
-    rm -rf "/etc/systemd/system/${PRODUCT_SERVICE}.service.d" 2>/dev/null || true
+    if [ -n "${service:-}" ]; then
+        rm -f "/etc/systemd/system/${service}.service" || true
+        rm -rf "/etc/systemd/system/${service}.service.d" 2>/dev/null || true
+    fi
 
-    echo "Перезапуск systemd daemon..."
+    echo "Перезапуск демона systemd..."
     systemctl daemon-reload >/dev/null 2>&1 || true
-    systemctl reset-failed "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
+    if [ -n "${service:-}" ]; then
+        systemctl reset-failed "${service}" >/dev/null 2>&1 || true
+    fi
 
-    gum_notify success "Продукт $p успешно удалён"
+    gum_notify success "Продукт $p успешно удален"
 }
