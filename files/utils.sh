@@ -96,7 +96,7 @@ open_editor() {
     [ -n "${EDITOR:-}" ] && editors+=("$EDITOR")
     [ -n "${VISUAL:-}" ] && editors+=("$VISUAL")
     editors+=("nano" "vim" "nvim" "helix" "micro" "joe")
-    
+
     for editor in "${editors[@]}"; do
         if command -v "$editor" >/dev/null 2>&1; then
             log "Открываю $file_path в $editor"
@@ -104,7 +104,7 @@ open_editor() {
             return 0
         fi
     done
-    
+
     error_exit "Не найдено ни одного редактора! Установите: nano vim nvim helix micro"
 }
 
@@ -145,21 +145,28 @@ product_health() {
 
 action_uninstall_soft() {
     local p="$1"
+    [ -z "$p" ] && return 1
 
-    local dir service binlink verfile
-    dir=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f4)
-    service=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f3)
-    binlink=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f6)
-    verfile=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f5)
+    product_use "$p" || { ux_msg "Ошибка: продукт $p не найден"; return 1; }
 
-    ux_confirm "Удалить $p?" || return 1
+    gum_confirm "Полностью удалить $p и все его файлы?" || return 1
 
-    systemctl stop "$service" >/dev/null 2>&1 || true
+    echo "Остановка службы $PRODUCT_SERVICE..."
+    systemctl stop "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
+    systemctl disable "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
 
-    rm -rf "$dir" "$binlink" "$verfile" \
-        "/etc/systemd/system/${service}.service" || true
+    echo "Удаление файлов..."
 
+    [ -n "$PRODUCT_DIR" ] && rm -rf "$PRODUCT_DIR"
+    [ -n "$PRODUCT_BIN_LINK" ] && rm -f "$PRODUCT_BIN_LINK"
+    [ -n "$PRODUCT_VER_FILE" ] && rm -f "$PRODUCT_VER_FILE"
+
+    rm -f "/etc/systemd/system/${PRODUCT_SERVICE}.service" || true
+    rm -rf "/etc/systemd/system/${PRODUCT_SERVICE}.service.d" 2>/dev/null || true
+
+    echo "Перезапуск systemd daemon..."
     systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl reset-failed "$PRODUCT_SERVICE" >/dev/null 2>&1 || true
 
-    ux_msg "Удалено: $p"
+    gum_notify success "Продукт $p успешно удалён"
 }
