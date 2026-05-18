@@ -168,13 +168,21 @@ action_uninstall_soft() {
 
     echo "Удаление файлов..."
 
-    [ -n "${dir:-}" ]     && sudo rm -rf "$dir"
-    [ -n "${binlink:-}" ] && sudo rm -f "$binlink"
-    [ -n "${verfile:-}" ] && sudo rm -f "$verfile"
+    if [ -n "${dir:-}" ]; then
+        sudo rm -rf "$dir"
+    fi
+    if [ -n "${binlink:-}" ]; then
+        sudo rm -f "$binlink"
+    fi
+    if [ -n "${verfile:-}" ]; then
+        sudo rm -f "$verfile"
+    fi
 
     if [ -n "${service:-}" ]; then
-        sudo rm -f "/etc/systemd/system/${service}.service"
-        sudo rm -rf "/etc/systemd/system/${service}.service.d" 2>/dev/null || true
+        sudo rm -f "/etc/systemd/system/${service}"
+        sudo rm -rf "/etc/systemd/system/${service}.d" 2>/dev/null || true
+    else
+        echo "Переменная service пустая, удаление юнитов пропущено!"
     fi
 
     echo "Перезапуск демона systemd..."
