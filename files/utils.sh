@@ -168,19 +168,19 @@ action_uninstall_soft() {
 
     echo "Удаление файлов..."
 
-    [ -n "${dir:-}" ]     && rm -rf "$dir"
-    [ -n "${binlink:-}" ] && rm -f "$binlink"
-    [ -n "${verfile:-}" ] && rm -f "$verfile"
+    [ -n "${dir:-}" ]     && sudo rm -rf "$dir"
+    [ -n "${binlink:-}" ] && sudo rm -f "$binlink"
+    [ -n "${verfile:-}" ] && sudo rm -f "$verfile"
 
     if [ -n "${service:-}" ]; then
-        rm -f "/etc/systemd/system/${service}.service" || true
-        rm -rf "/etc/systemd/system/${service}.service.d" 2>/dev/null || true
+        sudo rm -f "/etc/systemd/system/${service}.service"
+        sudo rm -rf "/etc/systemd/system/${service}.service.d" 2>/dev/null || true
     fi
 
     echo "Перезапуск демона systemd..."
-    systemctl daemon-reload >/dev/null 2>&1 || true
+    sudo systemctl daemon-reload >/dev/null 2>&1 || true
     if [ -n "${service:-}" ]; then
-        systemctl reset-failed "${service}" >/dev/null 2>&1 || true
+        sudo systemctl reset-failed "${service}" >/dev/null 2>&1 || true
     fi
 
     gum_notify success "Продукт $p успешно удален"
