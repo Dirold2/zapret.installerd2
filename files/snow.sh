@@ -176,3 +176,71 @@ action_install_cfgs_ipset_list() {
 
     gum_pause
 }
+
+ensure_strategies_repo() {
+    local dir="/opt/zapret.installer/strategies"
+
+    if [ -d "$dir/.git" ]; then
+        git -C "$dir" pull --ff-only >/dev/null 2>&1 || return 1
+        return 0
+    fi
+
+    rm -rf "$dir" >/dev/null 2>&1 || true
+    git clone --depth 1 "$PRODUCT_STRATEGIES_REPO" "$dir" >/dev/null 2>&1 || return 1
+}
+
+action_install_strategy() {
+    local strategies_dir="/opt/zapret.installer/strategies/$PRODUCT_STRATEGIES_DIR"
+
+    ensure_strategies_repo || {
+        gum_notify error "Не удалось обновить zaprett-repo"
+        return 1
+    }
+
+    [ -n "$PRODUCT_STRATEGIES_DIR" ] && [ -d "$strategies_dir" ] || {
+        gum_notify error "Стратегии не поддерживаются для $PRODUCT_ID"
+        pause
+        return 1
+    }
+
+    local imported
+    imported="$(pick_repo_file "$strategies_dir" "Выберите стратегию" "*.txt")" || return 1
+
+    print_header "Предпросмотр стратегии" "normal"
+    preview_text_file "$imported"
+    clear
+    print_header "Подтверждение" "info"
+
+    if ! gum_confirm "Применить эту стратегию к $PRODUCT_CONFIG_FILE ?"; then
+        return 1
+    fi
+
+    backup_begin || true
+    backup_path "$PRODUCT_CONFIG_FILE" || true
+
+    python3 <<PYEOF
+import re
+with open("$PRODUCT_CONFIG_FILE") as f:
+    config = f.read()
+with open("$imported") as f:
+    strategy = f.read().rstrip('\n')
+
+config = re.sub(
+    r'(NFQWS_OPT="\n).*?(\n")',
+    r'\1' + strategy + r'\2',
+    config,
+    flags=re.DOTALL
+)
+
+with open("$PRODUCT_CONFIG_FILE", 'w') as f:
+    f.write(config)
+PYEOF
+
+    gum_notify info "Стратегия применена к конфигу"
+
+    if gum_confirm "Перезапустить $PRODUCT_ID ?"; then
+        action_restart
+    fi
+
+    gum_pause
+}

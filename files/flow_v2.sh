@@ -771,6 +771,7 @@ menu_external_sources() {
         local ext_opts=()
         ext_opts+=("Скачать Fake бинарники (Flowseal)")
         ext_opts+=("Установить preset")
+        [ -n "${PRODUCT_STRATEGIES_DIR:-}" ] && ext_opts+=("Установить стратегию (zaprett-repo)")
         [ -n "${PRODUCT_CFGS_LIST_DIR:-}" ] && ext_opts+=("Установить list")
         [ -n "${PRODUCT_CFGS_LIST_DIR:-}" ] && ext_opts+=("Установить ipset list")
         ext_opts+=("Назад")
@@ -781,6 +782,7 @@ menu_external_sources() {
         case "$act" in
             "Скачать Fake бинарники (Flowseal)") action_download_fake_bins ;;
             "Установить preset")               action_install_cfgs_config ;;
+            "Установить стратегию (zaprett-repo)") action_install_strategy ;;
             "Установить list")                  action_install_cfgs_list ;;
             "Установить ipset list")            action_install_cfgs_ipset_list ;;
             "Назад") return 0 ;;

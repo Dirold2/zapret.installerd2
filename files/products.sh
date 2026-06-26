@@ -11,10 +11,12 @@ PRODUCT_CFGS_REPO=""
 PRODUCT_CFGS_DIR=""
 PRODUCT_CFGS_CONFIG_DIR=""
 PRODUCT_CFGS_LIST_DIR=""
+PRODUCT_STRATEGIES_DIR=""
 PRODUCT_CONFIG_FILE=""
 PRODUCT_LIST_FILE=""
 PRODUCT_EXCLUDE_FILE=""
 PRODUCT_GAME_IPSET_FILE=""
+PRODUCT_STRATEGIES_REPO="https://github.com/CherretGit/zaprett-repo"
 
 product_use() {
     case "$1" in
@@ -29,6 +31,7 @@ product_use() {
             PRODUCT_CFGS_DIR="/opt/zapret/zapret.cfgs"
             PRODUCT_CFGS_CONFIG_DIR="$PRODUCT_CFGS_DIR/configurations"
             PRODUCT_CFGS_LIST_DIR="$PRODUCT_CFGS_DIR/lists"
+            PRODUCT_STRATEGIES_DIR="files/strategies/nfqws"
             PRODUCT_CONFIG_FILE="/opt/zapret/config"
             PRODUCT_LIST_FILE="/opt/zapret/ipset/zapret-hosts-user.txt"
             PRODUCT_EXCLUDE_FILE="/opt/zapret/ipset/zapret-hosts-user-exclude.txt"
@@ -45,6 +48,7 @@ product_use() {
             PRODUCT_CFGS_DIR="/opt/zapret2/zapret.cfgs"
             PRODUCT_CFGS_CONFIG_DIR="$PRODUCT_CFGS_DIR/presets"
             PRODUCT_CFGS_LIST_DIR=""
+            PRODUCT_STRATEGIES_DIR=""
             PRODUCT_CONFIG_FILE="/opt/zapret2/config"
             PRODUCT_LIST_FILE="/opt/zapret2/ipset/zapret-hosts-user.txt"
             PRODUCT_EXCLUDE_FILE="/opt/zapret2/ipset/zapret-hosts-user-exclude.txt"
