@@ -492,7 +492,7 @@ gum_spin() {
     fi
 
     if $GUM_AVAILABLE; then
-        gum spin --spinner dot --title "$title" -- $cmd
+        gum spin --spinner dot --title "$title" -- bash -c "$cmd"
     else
         echo -n "$title ... "
         eval "$cmd" > /dev/null 2>&1

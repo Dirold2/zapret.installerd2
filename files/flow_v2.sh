@@ -453,7 +453,7 @@ menu_update() {
                 if $products_update && gum_confirm "Установить обновления?"; then
                     if $has_installer_updates; then
                         gum_notify info "Обновляю установщик..."
-                        gum_spin "git pull..." "git -C /opt/zapret.installer checkout main 2>/dev/null; git -C /opt/zapret.installer pull --rebase 2>/dev/null || { rm -rf /opt/zapret.installer && git clone --depth 1 https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer 2>/dev/null && git -C /opt/zapret.installer checkout -b main origin/main 2>/dev/null; } || true"
+                        gum_spin "git pull..." "cd /opt/zapret.installer && git pull --rebase || { cd / && rm -rf /opt/zapret.installer && git clone https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer; }"
                     fi
                     if $has_product_updates; then
                         action_perform_updates
@@ -470,14 +470,14 @@ menu_update() {
                 istat=$(check_installer_update)
                 if [ "$istat" = "not_git" ]; then
                     if gum_confirm "Клонировать установщик в /opt/zapret.installer?"; then
-                        gum_spin "Клонирование..." "git clone --depth 1 https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer 2>/dev/null && git -C /opt/zapret.installer checkout -b main origin/main 2>/dev/null"
+                        gum_spin "Клонирование..." "rm -rf /opt/zapret.installer && git clone https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer"
                     fi
                 elif [ "$istat" = "noconnect" ]; then
                     gum_notify error "Нет соединения"
                 elif [ "$istat" = "current" ]; then
                     gum_notify info "Установщик актуален"
                 else
-                    gum_spin "Обновление установщика..." "git -C /opt/zapret.installer checkout main 2>/dev/null; git -C /opt/zapret.installer pull --rebase 2>/dev/null || { rm -rf /opt/zapret.installer && git clone --depth 1 https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer 2>/dev/null && git -C /opt/zapret.installer checkout -b main origin/main 2>/dev/null; } || true"
+                    gum_spin "Обновление установщика..." "cd /opt/zapret.installer && git pull --rebase || { cd / && rm -rf /opt/zapret.installer && git clone https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer; }"
                     gum_notify success "Установщик обновлен"
                 fi
                 pause
