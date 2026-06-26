@@ -140,6 +140,13 @@ product_health() {
             ;;
     esac
 
+    if [[ $running -eq 1 ]]; then
+        local dir="/opt/$product"
+        for f in quic_initial_dbankcloud_ru.bin tls_clienthello_max_ru.bin; do
+            [ ! -f "$dir/files/fake/$f" ] && return 1
+        done
+    fi
+
     [[ $running -eq 1 ]]
 }
 
