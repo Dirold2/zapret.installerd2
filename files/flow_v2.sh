@@ -457,10 +457,12 @@ menu_update() {
                     fi
                     if $has_product_updates; then
                         action_perform_updates
-                    else
-                        gum_notify success "Установщик обновлен"
-                        pause
                     fi
+                    if $has_installer_updates; then
+                        exec "$0" "$@"
+                    fi
+                    gum_notify success "Обновлений нет"
+                    pause
                 else
                     pause
                 fi
@@ -478,7 +480,7 @@ menu_update() {
                     gum_notify info "Установщик актуален"
                 else
                     gum_spin "Обновление установщика..." "cd /opt/zapret.installer && git pull --rebase || { cd / && rm -rf /opt/zapret.installer && git clone https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer; }"
-                    gum_notify success "Установщик обновлен"
+                    exec "$0" "$@"
                 fi
                 pause
                 ;;
