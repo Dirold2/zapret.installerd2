@@ -413,7 +413,7 @@ menu_update() {
             "Проверить обновления")
                 print_header "Проверка обновлений" "info"
 
-                local products_update=false
+                local products_update=false has_product_updates=false has_installer_updates=false
                 for p in zapret zapret2; do
                     is_product_installed "$p" || continue
                     local status
@@ -427,6 +427,7 @@ menu_update() {
                         not_installed) ;;
                         *)
                             products_update=true
+                            has_product_updates=true
                             gum style --foreground 1 "$p: $lv → $status"
                             ;;
                     esac
@@ -444,16 +445,22 @@ menu_update() {
                     *)
                         gum style --foreground 1 "установщик: есть обновления (+$installer_status коммитов)"
                         products_update=true
+                        has_installer_updates=true
                         ;;
                 esac
 
                 echo
                 if $products_update && gum_confirm "Установить обновления?"; then
-                    if [ "${installer_status:-current}" != "current" ] && [ "${installer_status}" != "not_git" ] && [ "${installer_status}" != "noconnect" ]; then
+                    if $has_installer_updates; then
                         gum_notify info "Обновляю установщик..."
                         gum_spin "git pull..." "git -C /opt/zapret.installer pull --rebase 2>/dev/null || { rm -rf /opt/zapret.installer && git clone --depth 1 https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer 2>/dev/null; } || true"
                     fi
-                    action_perform_updates
+                    if $has_product_updates; then
+                        action_perform_updates
+                    else
+                        gum_notify success "Установщик обновлен"
+                        pause
+                    fi
                 else
                     pause
                 fi
