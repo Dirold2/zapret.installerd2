@@ -43,14 +43,14 @@ service_autostart() {
             ;;
         runit)
             if [ "$action" = "enable" ]; then
-                ln -fs "$PRODUCT_DIR/init.d/runit/$name/" /var/service/
+                ln -fs "$PRODUCT_DIR/init.d/runit/$name" /var/service/
             else
                 rm -f "/var/service/$name"
             fi
             ;;
         runit-artix)
             if [ "$action" = "enable" ]; then
-                ln -fs "$PRODUCT_DIR/init.d/runit/$name/" /run/runit/service/
+                ln -fs "$PRODUCT_DIR/init.d/runit/$name" /run/runit/service/
             else
                 rm -f "/run/runit/service/$name"
             fi

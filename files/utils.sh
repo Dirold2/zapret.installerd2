@@ -118,29 +118,29 @@ fast_exit(){
 # HEALTH CHECK
 # =========================
 product_health() {
-    local svc1="zapret"
-    local svc2="zapret2"
+    local product="${1:-zapret}"
+    local running=0
 
-    local zapret_running=0
-    local zapret2_running=0
+    case "$product" in
+        zapret)
+            if pgrep -x nfqws >/dev/null 2>&1; then
+                running=1
+            fi
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl is-active zapret >/dev/null 2>&1 && running=1
+            fi
+            ;;
+        zapret2)
+            if pgrep -x nfqws2 >/dev/null 2>&1; then
+                running=1
+            fi
+            if command -v systemctl >/dev/null 2>&1; then
+                systemctl is-active zapret2 >/dev/null 2>&1 && running=1
+            fi
+            ;;
+    esac
 
-    # zapret v1
-    if pgrep -x nfqws >/dev/null 2>&1; then
-        zapret_running=1
-    fi
-
-    # zapret2
-    if pgrep -x nfqws2 >/dev/null 2>&1; then
-        zapret2_running=1
-    fi
-
-    # systemd status (доп проверка)
-    local s1 s2
-    s1=$(systemctl is-active "$svc1" 2>/dev/null || echo "inactive")
-    s2=$(systemctl is-active "$svc2" 2>/dev/null || echo "inactive")
-
-    # return status (оба могут быть false одновременно)
-    [[ $zapret_running -eq 1 || $zapret2_running -eq 1 ]]
+    [[ $running -eq 1 ]]
 }
 
 action_uninstall_soft() {

@@ -34,7 +34,7 @@ state_load() {
 state_save() {
     state_mkdirs || return 1
     local tmp
-    tmp="$(mktemp)" || return 1
+    tmp="$(mktemp -t zapret-state.XXXXXXXX)" || return 1
     {
         echo "INSTALL_MODE=${INSTALL_MODE}"
         echo "ACTIVE_PRODUCT=${ACTIVE_PRODUCT}"

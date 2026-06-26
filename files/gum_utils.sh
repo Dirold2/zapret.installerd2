@@ -286,9 +286,10 @@ gum_divider() {
 gum_confirm() {
     local prompt="$1"
 
+    stty sane 2>/dev/null || true
+
     if $GUM_AVAILABLE; then
-        gum confirm --prompt.foreground="#2196F3" "$prompt"
-        return $?
+        gum confirm --prompt.foreground="#2196F3" "$prompt" && return 0 || return $?
     else
         echo -e "${COLOR_CYAN}$prompt${COLOR_RESET} (y/N): "
         read -r ans
@@ -651,8 +652,5 @@ gum_term_warn() {
 }
 
 # ============================================================================
-# Инициализация при загрузке
+# Инициализация (вызывается явно из main_menu_gum)
 # ============================================================================
-
-# Автоматически инизируем gum при подключении модуля
-gum_init

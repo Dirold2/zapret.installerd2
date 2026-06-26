@@ -5,9 +5,7 @@ ux_confirm() {
 }
 
 ux_choose_one() {
-    local title="$1"
-    shift
-    gum choose --header "$title" "$@"
+    gum_choose_one "$@"
 }
 
 ux_msg() {
@@ -133,10 +131,17 @@ ui_choose_one() {
     local title="$1"; shift
     ui_maybe_refresh
 
-    gum choose \
-        --header "$(ui_header | tr '\n' ' ')" \
-        --height "$GUM_MENU_HEIGHT" \
-        "$@"
+    if $GUM_AVAILABLE; then
+        gum choose \
+            --header "$(ui_header | tr '\n' ' ')" \
+            --height "$GUM_MENU_HEIGHT" \
+            "$@"
+    else
+        local result
+        result=$(gum_choose_one "$title" "$@")
+        echo "$result"
+        return $?
+    fi
 }
 
 ui_header() {

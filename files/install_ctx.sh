@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # =========================
 # CONFIGURATION
@@ -150,12 +149,12 @@ EOF
 # =========================
 main_install() {
     read -p "Установить $PRODUCT_ID? (y/N): " answer
-    [[ "$answer" =~ ^[Yy] ]] || exit 0
+    [[ "$answer" =~ ^[Yy] ]] || return 0
     
     # Backup
     [ -d "$PRODUCT_DIR" ] && {
         read -p "Найден $PRODUCT_DIR. Удалить? (y/N): " answer
-        [[ "$answer" =~ ^[Yy] ]] || exit 0
+        [[ "$answer" =~ ^[Yy] ]] || return 0
         rm -rf "$PRODUCT_DIR"
     }
     

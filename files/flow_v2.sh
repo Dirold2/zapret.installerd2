@@ -19,7 +19,7 @@ action_import_config() {
     print_header "Предпросмотр config" "normal"
 
     if command -v bat >/dev/null 2>&1; then
-        bat --style=plain --paging=always "$imported"
+        bat --style=plain "$imported"
     elif command -v less >/dev/null 2>&1; then
         less "$imported"
     elif command -v more >/dev/null 2>&1; then
@@ -29,6 +29,10 @@ action_import_config() {
         echo
         pause
     fi
+
+    stty sane 2>/dev/null || true
+    clear
+    print_header "Импорт конфига" "info"
 
     if ! grep -qE "NFQWS_OPT|MODE_FILTER|TPWS_OPT" "$imported"; then
         gum_notify warn "Файл не похож на zapret config"
@@ -122,8 +126,10 @@ action_service_logs() {
     gum style --foreground 240 "Ctrl+C — выход"
     echo
 
-    trap 'tput cnorm; echo; return 0' INT TERM
-    tput civis
+    local old_trap
+    old_trap=$(trap -p INT TERM 2>/dev/null || true)
+    trap 'tput cnorm 2>/dev/null || true; echo; return 0' INT TERM
+    tput civis 2>/dev/null || true
 
     journalctl -u "$PRODUCT_SERVICE" -f --no-pager -o cat 2>/dev/null |
     while IFS= read -r line; do
@@ -146,7 +152,8 @@ action_service_logs() {
         esac
     done
 
-    tput cnorm
+    tput cnorm 2>/dev/null || true
+    eval "$old_trap" 2>/dev/null || true
 }
 
 product_status_text() {
@@ -154,8 +161,28 @@ product_status_text() {
     service_is_active "$PRODUCT_SERVICE" && active="yes"
     service_is_enabled "$PRODUCT_SERVICE" && enabled="yes"
 
+    local local_ver
+    local_ver=$(cat "$PRODUCT_VER_FILE" 2>/dev/null || echo "—")
+    if [ "$local_ver" = "release" ]; then
+        local_ver="релиз"
+    elif [ "$local_ver" = "git" ]; then
+        local_ver="git"
+    fi
+
+    local update_status
+    update_status=$(check_product_update "$PRODUCT_ID")
+    case "$update_status" in
+        current) update_status="актуально" ;;
+        git)     update_status="git (проверка вручную)" ;;
+        noconnect) update_status="ошибка проверки" ;;
+        not_installed) update_status="" ;;
+        *)       update_status="доступно $update_status" ;;
+    esac
+
     cat <<EOF
 Продукт:   $PRODUCT_ID
+Версия:    $local_ver
+Обновление: $update_status
 Каталог:   $PRODUCT_DIR
 Сервис:    $PRODUCT_SERVICE
 Активен:   $active
@@ -203,9 +230,24 @@ action_show_status() {
         st_color=1
     fi
 
-    gum style "Версия:  $PRODUCT_ID"
+    local local_ver
+    local_ver=$(cat "$PRODUCT_VER_FILE" 2>/dev/null || echo "—")
+    [ "$local_ver" = "release" ] && local_ver="релиз"
+
+    local update_status
+    update_status=$(check_product_update "$PRODUCT_ID")
+    case "$update_status" in
+        current)   update_status="$(gum style --foreground 2 'актуально')" ;;
+        git)       update_status="$(gum style --foreground 3 'git')" ;;
+        noconnect) update_status="$(gum style --foreground 1 'ошибка')" ;;
+        not_installed) update_status="" ;;
+        *)         update_status="$(gum style --foreground 1 "→ $update_status")" ;;
+    esac
+
+    gum style "Версия:  $local_ver"
     gum style "Сервис:  $svc"
     gum style "Статус:  $(gum style --foreground "$st_color" "$st") $icon"
+    [ -n "$update_status" ] && gum style "Обновление: $update_status"
 
     echo
 
@@ -275,6 +317,170 @@ action_stop()    { manage_service stop; }
 action_restart() { manage_service restart; }
 action_enable()  { manage_autostart enable >/dev/null 2>&1 || true; }
 action_disable() { manage_autostart disable >/dev/null 2>&1 || true; }
+
+check_product_update() {
+    local name="$1"
+    local ver_file="" remote_repo=""
+
+    case "$name" in
+        zapret)  ver_file="/opt/zapret-ver";  remote_repo="bol-van/zapret"  ;;
+        zapret2) ver_file="/opt/zapret2-ver"; remote_repo="bol-van/zapret2" ;;
+        *) return 1 ;;
+    esac
+
+    local local_ver
+    local_ver=$(cat "$ver_file" 2>/dev/null || echo "")
+
+    [ -z "$local_ver" ] && { echo "not_installed"; return 0; }
+    [ "$local_ver" = "git" ] && { echo "git"; return 0; }
+
+    local remote_ver
+    remote_ver=$(timeout 10 curl -s "https://api.github.com/repos/$remote_repo/releases/latest" 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4 | sed 's/^v//' || echo "")
+
+    [ -z "$remote_ver" ] && { echo "noconnect"; return 0; }
+    [ "$local_ver" != "$remote_ver" ] && { echo "$remote_ver"; return 0; }
+    echo "current"
+}
+
+action_perform_updates() {
+    local updated=false
+
+    for p in zapret zapret2; do
+        is_product_installed "$p" || continue
+        local status
+        status=$(check_product_update "$p")
+
+        case "$status" in
+            current|git|not_installed|noconnect)
+                continue
+                ;;
+            *)
+                gum_notify info "Обновляю $p: $status..."
+                product_use "$p" || continue
+                main_update 2>&1 | gum_spin "Обновление $p..."
+                updated=true
+                ;;
+        esac
+    done
+
+    if $updated; then
+        gum_notify success "Обновление завершено"
+    else
+        ux_msg "Нечего обновлять"
+    fi
+
+    manage_service restart 2>/dev/null || true
+    pause
+}
+
+check_installer_update() {
+    local dir="/opt/zapret.installer"
+    [ ! -d "$dir/.git" ] && { echo "not_git"; return 0; }
+
+    git -C "$dir" fetch --quiet origin 2>/dev/null || { echo "noconnect"; return 0; }
+
+    local behind
+    behind=$(git -C "$dir" rev-list --count HEAD..origin/main 2>/dev/null || git -C "$dir" rev-list --count HEAD..origin/master 2>/dev/null || echo "0")
+
+    if [ "${behind:-0}" -gt 0 ]; then
+        echo "$behind"
+    else
+        echo "current"
+    fi
+}
+
+menu_update() {
+    while true; do
+        clear
+        local act
+        act="$(ui_choose_one "ОБНОВЛЕНИЕ" \
+            "Проверить обновления" \
+            "Обновить установщик" \
+            "Обновить конфиги (zapret.cfgs)" \
+            "Назад")" || return 0
+
+        case "$act" in
+            "Проверить обновления")
+                print_header "Проверка обновлений" "info"
+
+                local products_update=false
+                for p in zapret zapret2; do
+                    is_product_installed "$p" || continue
+                    local status
+                    status=$(check_product_update "$p")
+                    local lv
+                    lv=$(cat "/opt/$p-ver" 2>/dev/null || echo "—")
+                    case "$status" in
+                        current) gum style --foreground 2 "$p: актуально ($lv)" ;;
+                        git)     gum style --foreground 3 "$p: установлен из git" ;;
+                        noconnect) gum style --foreground 1 "$p: ошибка проверки" ;;
+                        not_installed) ;;
+                        *)
+                            products_update=true
+                            gum style --foreground 1 "$p: $lv → $status"
+                            ;;
+                    esac
+                done
+
+                local installer_status
+                installer_status=$(check_installer_update)
+                case "$installer_status" in
+                    current|not_git)
+                        gum style --foreground 2 "установщик: актуально"
+                        ;;
+                    noconnect)
+                        gum style --foreground 1 "установщик: ошибка проверки"
+                        ;;
+                    *)
+                        gum style --foreground 1 "установщик: есть обновления (+$installer_status коммитов)"
+                        products_update=true
+                        ;;
+                esac
+
+                echo
+                if $products_update && gum_confirm "Установить обновления?"; then
+                    if [ "${installer_status:-current}" != "current" ] && [ "${installer_status}" != "not_git" ] && [ "${installer_status}" != "noconnect" ]; then
+                        gum_notify info "Обновляю установщик..."
+                        gum_spin "git pull..." "git -C /opt/zapret.installer pull --ff-only 2>/dev/null || true"
+                    fi
+                    action_perform_updates
+                else
+                    pause
+                fi
+                ;;
+            "Обновить установщик")
+                local istat
+                istat=$(check_installer_update)
+                if [ "$istat" = "not_git" ]; then
+                    if gum_confirm "Клонировать установщик в /opt/zapret.installer?"; then
+                        gum_spin "Клонирование..." "git clone --depth 1 https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer 2>/dev/null"
+                    fi
+                elif [ "$istat" = "noconnect" ]; then
+                    gum_notify error "Нет соединения"
+                elif [ "$istat" = "current" ]; then
+                    gum_notify info "Установщик актуален"
+                else
+                    gum_spin "Обновление установщика..." "git -C /opt/zapret.installer pull --ff-only 2>/dev/null || true"
+                    gum_notify success "Установщик обновлен"
+                fi
+                pause
+                ;;
+            "Обновить конфиги (zapret.cfgs)")
+                if gum_confirm "Обновить конфиги из zapret.cfgs?"; then
+                    for p in zapret zapret2; do
+                        local cfgs_dir="/opt/$p/zapret.cfgs"
+                        if [ -d "$cfgs_dir" ]; then
+                            gum_spin "Обновление конфигов для $p..." "git -C \"$cfgs_dir\" pull --ff-only 2>/dev/null || true"
+                        fi
+                    done
+                    gum_notify success "Конфиги обновлены"
+                fi
+                pause
+                ;;
+            "Назад") return 0 ;;
+        esac
+    done
+}
 
 product_choose() {
     local which
@@ -526,7 +732,12 @@ service_state() {
 
 is_product_installed() {
     local name="$1"
-    [ -f "/etc/systemd/system/${name}.service" ]
+    [ -f "/etc/systemd/system/${name}.service" ] && return 0
+    [ -f "/etc/init.d/${name}" ] && return 0
+    [ -d "/var/service/${name}" ] && return 0
+    [ -d "/run/runit/service/${name}" ] && return 0
+    [ -d "/opt/${name}" ] && return 0
+    return 1
 }
 
 main_menu_gum() {
@@ -558,6 +769,10 @@ main_menu_gum() {
         opts+=(
             "Статус"
         )
+
+        if $has_any; then
+            opts+=("Обновление")
+        fi
 
         if $has_any; then
             opts+=("$(gum style --foreground 1 'Удаление')")
@@ -598,6 +813,9 @@ main_menu_gum() {
                 ;;
             "Статус")
                 action_show_all_status
+                ;;
+            "Обновление")
+                menu_update
                 ;;
             "Удаление")
                 local del_opts=()

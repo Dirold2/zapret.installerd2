@@ -35,16 +35,16 @@ manage_service() {
             esac
             ;;
         openrc)
-            rc-service zapret "$cmd"
+            rc-service "${PRODUCT_SERVICE:-zapret}" "$cmd"
             ;;
         runit|runit-artix)
-            sv "$cmd" zapret
+            sv "$cmd" "${PRODUCT_SERVICE:-zapret}"
             ;;
         sysvinit)
-            service zapret "$cmd"
+            service "${PRODUCT_SERVICE:-zapret}" "$cmd"
             ;;
         procd)
-            service zapret "$cmd"
+            service "${PRODUCT_SERVICE:-zapret}" "$cmd"
             ;;
         *)
             gum_notify warn "Неизвестная init-система: $INIT_SYSTEM"
@@ -76,134 +76,38 @@ manage_autostart() {
             ;;
         runit)
             if [[ "$cmd" == "enable" ]]; then
-                ln -fs /opt/zapret/init.d/runit/zapret /var/service/
+                ln -fs "${PRODUCT_DIR:-/opt/zapret}/init.d/runit/${PRODUCT_SERVICE:-zapret}" /var/service/
             else
-                rm -f /var/service/zapret
+                rm -f "/var/service/${PRODUCT_SERVICE:-zapret}"
             fi
             ;;
         runit-artix)
             if [[ "$cmd" == "enable" ]]; then
-                ln -fs /opt/zapret/init.d/runit/zapret /run/runit/service/
+                ln -fs "${PRODUCT_DIR:-/opt/zapret}/init.d/runit/${PRODUCT_SERVICE:-zapret}" /run/runit/service/
             else
-                rm -f /run/runit/service/zapret
+                rm -f "/run/runit/service/${PRODUCT_SERVICE:-zapret}"
             fi
             ;;
         sysvinit)
             if [[ "$cmd" == "enable" ]]; then
-                update-rc.d zapret defaults
+                update-rc.d "${PRODUCT_SERVICE:-zapret}" defaults
             else
-                update-rc.d -f zapret remove
+                update-rc.d -f "${PRODUCT_SERVICE:-zapret}" remove
             fi
             ;;
         openrc)
             if [[ "$cmd" == "enable" ]]; then
-                rc-update add zapret default
+                rc-update add "${PRODUCT_SERVICE:-zapret}" default
             else
-                rc-update del zapret
+                rc-update del "${PRODUCT_SERVICE:-zapret}"
             fi
             ;;
         procd)
-            service zapret "$cmd"
+            service "${PRODUCT_SERVICE:-zapret}" "$cmd"
             ;;
         *)
             gum_notify warn "Неизвестная init-система: $INIT_SYSTEM"
             return 1
-            ;;
-    esac
-}
-
-check_zapret_exist() {
-    local service_exists=false
-    local dir_exists=false
-    local binaries_exists=false
-
-    case "$INIT_SYSTEM" in
-        systemd)
-            if systemd_unit_exists "zapret.service" || systemd_timer_exists "zapret-list-update.timer"; then
-                service_exists=true
-            fi
-            ;;
-        procd)
-            [ -f /etc/init.d/zapret ] && service_exists=true
-            ;;
-        runit)
-            [ -e /var/service/zapret ] && service_exists=true
-            ;;
-        runit-artix)
-            [ -e /run/runit/service/zapret ] && service_exists=true
-            ;;
-        openrc)
-            rc-service -l 2>/dev/null | grep -Fxq "zapret" && service_exists=true
-            ;;
-        sysvinit)
-            [ -f /etc/init.d/zapret ] && service_exists=true
-            ;;
-        *)
-            ZAPRET_EXIST=false
-            return
-            ;;
-    esac
-
-    if [ -d /opt/zapret ]; then
-        dir_exists=true
-        [ -d /opt/zapret/binaries ] && binaries_exists=true || binaries_exists=false
-    fi
-
-    if [ "$service_exists" = true ] && [ "$dir_exists" = true ] && [ "$binaries_exists" = true ]; then
-        ZAPRET_EXIST=true
-    else
-        ZAPRET_EXIST=false
-    fi
-}
-
-check_zapret_status() {
-    case "$INIT_SYSTEM" in
-        systemd)
-            if ! systemd_unit_exists "zapret.service"; then
-                ZAPRET_ACTIVE=false
-                ZAPRET_ENABLED=false
-                ZAPRET_SUBSTATE="not-found"
-                return
-            fi
-
-            ZAPRET_ACTIVE="$(systemctl show -p ActiveState --value zapret.service 2>/dev/null || echo "inactive")"
-            ZAPRET_SUBSTATE="$(systemctl show -p SubState --value zapret.service 2>/dev/null || echo "dead")"
-            ZAPRET_ENABLED="$(systemctl is-enabled zapret.service 2>/dev/null || echo "disabled")"
-
-            if [[ "$ZAPRET_ACTIVE" == "active" && "$ZAPRET_SUBSTATE" == "running" ]]; then
-                ZAPRET_ACTIVE=true
-            else
-                ZAPRET_ACTIVE=false
-            fi
-
-            if [[ "$ZAPRET_ENABLED" == "enabled" ]]; then
-                ZAPRET_ENABLED=true
-            else
-                ZAPRET_ENABLED=false
-            fi
-            ;;
-        openrc)
-            rc-service zapret status >/dev/null 2>&1 && ZAPRET_ACTIVE=true || ZAPRET_ACTIVE=false
-            rc-update show 2>/dev/null | grep -q "zapret" && ZAPRET_ENABLED=true || ZAPRET_ENABLED=false
-            ;;
-        procd)
-            /etc/init.d/zapret status 2>/dev/null | grep -q "running" && ZAPRET_ACTIVE=true || ZAPRET_ACTIVE=false
-            [ -f /etc/rc.d/zapret ] && ZAPRET_ENABLED=true || ZAPRET_ENABLED=false
-            ;;
-        runit)
-            sv status zapret 2>/dev/null | grep -q "run" && ZAPRET_ACTIVE=true || ZAPRET_ACTIVE=false
-            [ -e /var/service/zapret ] && ZAPRET_ENABLED=true || ZAPRET_ENABLED=false
-            ;;
-        runit-artix)
-            sv status zapret 2>/dev/null | grep -q "run" && ZAPRET_ACTIVE=true || ZAPRET_ACTIVE=false
-            [ -e /run/runit/service/zapret ] && ZAPRET_ENABLED=true || ZAPRET_ENABLED=false
-            ;;
-        sysvinit)
-            service zapret status >/dev/null 2>&1 && ZAPRET_ACTIVE=true || ZAPRET_ACTIVE=false
-            ;;
-        *)
-            ZAPRET_ACTIVE=false
-            ZAPRET_ENABLED=false
             ;;
     esac
 }
@@ -268,30 +172,3 @@ toggle_service() {
     done
 }
 
-detect_init() {
-    GET_LIST_PREFIX=/ipset/get_
-
-    SYSTEMD_DIR=/lib/systemd
-    [ -d "$SYSTEMD_DIR" ] || SYSTEMD_DIR=/usr/lib/systemd
-    [ -d "$SYSTEMD_DIR" ] && SYSTEMD_SYSTEM_DIR="$SYSTEMD_DIR/system"
-
-    INIT_SCRIPT=/etc/init.d/zapret
-
-    if [ -d /run/systemd/system ]; then
-        INIT_SYSTEM="systemd"
-    elif [ "${SYSTEM:-}" = "openwrt" ]; then
-        INIT_SYSTEM="procd"
-    elif command -v openrc >/dev/null 2>&1; then
-        INIT_SYSTEM="openrc"
-    elif command -v runit >/dev/null 2>&1; then
-        INIT_SYSTEM="runit"
-        [ -f /etc/os-release ] && . /etc/os-release
-        if [ "${ID:-}" = "artix" ]; then
-            INIT_SYSTEM="runit-artix"
-        fi
-    elif [ -x /sbin/init ] && /sbin/init --version 2>&1 | grep -qi "sysv init"; then
-        INIT_SYSTEM="sysvinit"
-    else
-        error_exit "Не удалось определить init."
-    fi
-}

@@ -1,6 +1,3 @@
-PRODUCT_CFGS_REPO="https://github.com/Snowy-Fluffy/zapret.cfgs"
-PRODUCT_CFGS_DIR="/opt/$PRODUCT_ID/zapret.cfgs"
-
 ensure_cfgs_repo() {
     if [ -d "$PRODUCT_CFGS_DIR/.git" ]; then
         git -C "$PRODUCT_CFGS_DIR" pull --ff-only >/dev/null 2>&1 || return 1
@@ -15,7 +12,7 @@ preview_text_file() {
     local file="$1"
 
     if command -v bat >/dev/null 2>&1; then
-        bat --style=plain --paging=always "$file"
+        bat --style=plain "$file"
     elif command -v less >/dev/null 2>&1; then
         less "$file"
     elif command -v more >/dev/null 2>&1; then
@@ -25,6 +22,8 @@ preview_text_file() {
         echo
         pause
     fi
+
+    stty sane 2>/dev/null || true
 }
 
 pick_repo_file() {
@@ -88,6 +87,8 @@ action_install_cfgs_config() {
 
     print_header "Предпросмотр config" "normal"
     preview_text_file "$imported"
+    clear
+    print_header "Подтверждение" "info"
 
     if ! gum_confirm "Установить этот config в $PRODUCT_CONFIG_FILE ?"; then
         return 1
@@ -113,6 +114,8 @@ action_install_cfgs_list() {
 
     print_header "Предпросмотр list" "normal"
     preview_text_file "$imported"
+    clear
+    print_header "Подтверждение" "info"
 
     if ! gum_confirm "Установить этот list в $PRODUCT_LIST_FILE ?"; then
         return 1
@@ -138,6 +141,8 @@ action_install_cfgs_ipset_list() {
 
     print_header "Предпросмотр ipset-list" "normal"
     preview_text_file "$imported"
+    clear
+    print_header "Подтверждение" "info"
 
     local dst="$PRODUCT_DIR/ipset/$(basename "$imported")"
 

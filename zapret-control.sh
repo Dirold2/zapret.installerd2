@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_DIR="/opt/zapret.installer"
+BASE_DIR="$(dirname "$(readlink -f "$0")")"
 
 source "$BASE_DIR/files/utils.sh"
 source "$BASE_DIR/files/init.sh"
