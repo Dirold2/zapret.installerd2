@@ -81,7 +81,9 @@ install_release() {
     [ -z "$extracted" ] && return 1
     
     mv "$extracted" "$PRODUCT_DIR" || return 1
-    echo "release" > "$PRODUCT_VER_FILE"
+    local ver
+    ver=$(echo "$url" | sed 's/.*\/tags\///; s/\.tar\.gz$//; s/^v//')
+    echo "${ver:-release}" > "$PRODUCT_VER_FILE"
     log "$PRODUCT_ID установлен из релиза"
 }
 

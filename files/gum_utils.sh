@@ -481,6 +481,9 @@ gum_spin() {
     local title="${1:-Загрузка...}"
     local cmd="${2:-}"
 
+    title="${title%...}"
+    title="${title% }"
+
     if [ -z "$cmd" ]; then
         [ ! -t 0 ] && cat > /dev/null 2>&1
         echo -n "$title ... "

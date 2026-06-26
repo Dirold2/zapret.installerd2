@@ -441,7 +441,7 @@ menu_update() {
                 if $products_update && gum_confirm "Установить обновления?"; then
                     if [ "${installer_status:-current}" != "current" ] && [ "${installer_status}" != "not_git" ] && [ "${installer_status}" != "noconnect" ]; then
                         gum_notify info "Обновляю установщик..."
-                        gum_spin "git pull..." "git -C /opt/zapret.installer pull --ff-only 2>/dev/null || true"
+                        gum_spin "git pull..." "git -C /opt/zapret.installer pull --rebase 2>/dev/null || { rm -rf /opt/zapret.installer && git clone --depth 1 https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer 2>/dev/null; } || true"
                     fi
                     action_perform_updates
                 else
@@ -460,7 +460,7 @@ menu_update() {
                 elif [ "$istat" = "current" ]; then
                     gum_notify info "Установщик актуален"
                 else
-                    gum_spin "Обновление установщика..." "git -C /opt/zapret.installer pull --ff-only 2>/dev/null || true"
+                    gum_spin "Обновление установщика..." "git -C /opt/zapret.installer pull --rebase 2>/dev/null || { rm -rf /opt/zapret.installer && git clone --depth 1 https://github.com/Dirold2/zapret.installerd2 /opt/zapret.installer 2>/dev/null; } || true"
                     gum_notify success "Установщик обновлен"
                 fi
                 pause
