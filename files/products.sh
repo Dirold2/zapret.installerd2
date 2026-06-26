@@ -78,4 +78,3 @@ product_print_plan() {
     echo "  - лист:    $PRODUCT_LIST_FILE"
     echo "  - бинарь:  $PRODUCT_BINLINK"
 }
-
