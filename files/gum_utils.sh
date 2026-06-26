@@ -479,7 +479,7 @@ gum_progress() {
 
 gum_spin() {
     local title="${1:-Загрузка...}"
-    local cmd="$2"
+    local cmd="${2:-}"
 
     if $GUM_AVAILABLE; then
         gum spin --spinner dot --title "$title" -- $cmd
