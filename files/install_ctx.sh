@@ -57,20 +57,23 @@ get_latest_version() {
 # INSTALL CORE
 # =========================
 install_release() {
-    local tmp url extracted
+    local tmp url extracted fake_backup
     tmp=$(mktemp -d) || return 1
+    fake_backup=$(mktemp -d)
     url=$(gh_latest_url "$PRODUCT_REPO")
     
-    [ -z "$url" ] && { rm -rf "$tmp"; return 1; }
+    [ -z "$url" ] && { rm -rf "$tmp" "$fake_backup"; return 1; }
+
+    [ -d "$PRODUCT_DIR/files/fake" ] && cp -r "$PRODUCT_DIR/files/fake"/* "$fake_backup/" 2>/dev/null || true
     
     log "Скачиваю релиз $PRODUCT_ID..."
-    curl -fL "$url" -o "$tmp/release.tar.gz" || { rm -rf "$tmp"; return 1; }
+    curl -fL "$url" -o "$tmp/release.tar.gz" || { rm -rf "$tmp" "$fake_backup"; return 1; }
     
     rm -rf "$PRODUCT_DIR" 2>/dev/null || true
     mkdir -p /opt
     
     tar -xzf "$tmp/release.tar.gz" -C /opt || {
-        rm -rf "$tmp"
+        rm -rf "$tmp" "$fake_backup"
         return 1
     }
 
@@ -78,9 +81,14 @@ install_release() {
     extracted="/opt/$extracted"
 
     rm -rf "$tmp"
-    [ -z "$extracted" ] && return 1
+    [ -z "$extracted" ] && { rm -rf "$fake_backup"; return 1; }
     
-    mv "$extracted" "$PRODUCT_DIR" || return 1
+    mv "$extracted" "$PRODUCT_DIR" || { rm -rf "$fake_backup"; return 1; }
+
+    [ -d "$fake_backup" ] && [ "$(ls -A "$fake_backup" 2>/dev/null)" ] &&
+        cp -r "$fake_backup"/* "$PRODUCT_DIR/files/fake/" 2>/dev/null || true
+    rm -rf "$fake_backup"
+
     local ver
     ver=$(echo "$url" | sed 's/.*\/tags\///; s/\.tar\.gz$//; s/^v//')
     echo "${ver:-release}" > "$PRODUCT_VER_FILE"

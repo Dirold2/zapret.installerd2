@@ -179,6 +179,10 @@ product_status_text() {
         *)       update_status="доступно $update_status" ;;
     esac
 
+    local fake_missing=()
+    [ ! -f "$PRODUCT_DIR/files/fake/quic_initial_dbankcloud_ru.bin" ] && fake_missing+=("quic_initial_dbankcloud_ru.bin")
+    [ ! -f "$PRODUCT_DIR/files/fake/tls_clienthello_max_ru.bin" ] && fake_missing+=("tls_clienthello_max_ru.bin")
+
     cat <<EOF
 Продукт:   $PRODUCT_ID
 Версия:    $local_ver
@@ -187,6 +191,7 @@ product_status_text() {
 Сервис:    $PRODUCT_SERVICE
 Активен:   $active
 Автостарт: $enabled
+$(for f in "${fake_missing[@]}"; do echo "⚠️  Отсутствует: $f"; done)
 EOF
 }
 
@@ -248,6 +253,11 @@ action_show_status() {
     gum style "Сервис:  $svc"
     gum style "Статус:  $(gum style --foreground "$st_color" "$st") $icon"
     [ -n "$update_status" ] && gum style "Обновление: $update_status"
+
+    local fake_files=("quic_initial_dbankcloud_ru.bin" "tls_clienthello_max_ru.bin")
+    for f in "${fake_files[@]}"; do
+        [ ! -f "$PRODUCT_DIR/files/fake/$f" ] && gum style --foreground 1 "⚠️  Отсутствует: $f"
+    done
 
     echo
 
@@ -643,6 +653,9 @@ action_download_fake_bins() {
     done
 
     gum_notify info "Файлы обновлены в $target_dir"
+    if gum_confirm "Перезапустить $PRODUCT_ID ?"; then
+        action_restart
+    fi
     pause
 }
 
