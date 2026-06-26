@@ -583,6 +583,7 @@ menu_manage_product() {
             "Сервис" \
             "Конфиги" \
             "Логи" \
+            "Проверка стратегий (blockcheck)" \
             "Назад")" || return 0
 
         case "$act" in
@@ -590,6 +591,7 @@ menu_manage_product() {
             "Сервис") menu_service ;;
             "Конфиги") menu_config ;;
             "Логи") menu_logs ;;
+            "Проверка стратегий (blockcheck)") action_run_blockcheck ;;
             "Назад") return 0 ;;
         esac
     done
@@ -622,6 +624,76 @@ menu_service() {
             "Назад") return 0 ;;
         esac
     done
+}
+
+action_run_blockcheck() {
+    local script_name="" script_url=""
+    case "$PRODUCT_ID" in
+        zapret)
+            script_name="blockcheck.sh"
+            script_url="https://raw.githubusercontent.com/bol-van/zapret/master/blockcheck.sh"
+            ;;
+        zapret2)
+            script_name="blockcheck2.sh"
+            script_url="https://raw.githubusercontent.com/bol-van/zapret2/master/blockcheck2.sh"
+            ;;
+        *) gum_notify error "Неизвестный продукт: $PRODUCT_ID"; return 1 ;;
+    esac
+
+    local script_path="$PRODUCT_DIR/$script_name"
+
+    if [ ! -f "$script_path" ]; then
+        print_header "Загрузка $script_name" "info"
+        if ! curl -fL --retry 3 --connect-timeout 10 --max-time 60 \
+            "$script_url" -o "$script_path.tmp"; then
+            rm -f "$script_path.tmp"
+            gum_notify error "Не удалось загрузить $script_name"
+            pause
+            return 1
+        fi
+        mv "$script_path.tmp" "$script_path"
+        chmod +x "$script_path"
+        gum_notify info "$script_name загружен"
+    fi
+
+    print_header "Проверка стратегий обхода ($PRODUCT_ID)" "info"
+    echo
+    gum style --foreground 3 "Внимание! Тест может занять 5-15 минут."
+    gum style --foreground 3 "Во время теста возможны временные проблемы с сетью."
+    echo
+    if ! gum_confirm "Запустить blockcheck?"; then
+        return 1
+    fi
+
+    clear
+    print_header "blockcheck ($PRODUCT_ID)" "normal"
+    echo
+    gum style --foreground 240 "Ctrl+C — прервать тест"
+    echo
+
+    local old_trap
+    old_trap=$(trap -p INT TERM 2>/dev/null || true)
+    trap 'echo; gum_notify warn "Тест прерван пользователем"; return 1' INT TERM
+
+    cd "$PRODUCT_DIR"
+    bash "$script_path" || {
+        gum_notify warn "$script_name завершился с ошибкой"
+        eval "$old_trap" 2>/dev/null || true
+        pause
+        return 1
+    }
+
+    eval "$old_trap" 2>/dev/null || true
+    echo
+    gum_notify info "Проверка завершена"
+
+    if gum_confirm "Открыть конфиг для применения рекомендаций?"; then
+        open_editor "$PRODUCT_CONFIG_FILE"
+        if gum_confirm "Перезапустить $PRODUCT_ID ?"; then
+            action_restart
+        fi
+    fi
+    pause
 }
 
 action_download_fake_bins() {
@@ -696,19 +768,21 @@ menu_config() {
 menu_external_sources() {
     while true; do
         clear
+        local ext_opts=()
+        ext_opts+=("Скачать Fake бинарники (Flowseal)")
+        ext_opts+=("Установить preset")
+        [ -n "${PRODUCT_CFGS_LIST_DIR:-}" ] && ext_opts+=("Установить list")
+        [ -n "${PRODUCT_CFGS_LIST_DIR:-}" ] && ext_opts+=("Установить ipset list")
+        ext_opts+=("Назад")
+
         local act
-        act="$(ui_choose_one "Внешние источники (Download/Sync)" \
-            "Скачать Fake бинарники (Flowseal)" \
-            "Установить config (Snowy-Fluffy)" \
-            "Установить list (Snowy-Fluffy)" \
-            "Установить ipset list (Snowy-Fluffy)" \
-            "Назад")" || return 0
+        act="$(ui_choose_one "Внешние источники (Download/Sync)" "${ext_opts[@]}")" || return 0
 
         case "$act" in
             "Скачать Fake бинарники (Flowseal)") action_download_fake_bins ;;
-            "Установить config (Snowy-Fluffy)")  action_install_cfgs_config ;;
-            "Установить list (Snowy-Fluffy)")    action_install_cfgs_list ;;
-            "Установить ipset list (Snowy-Fluffy)") action_install_cfgs_ipset_list ;;
+            "Установить preset")               action_install_cfgs_config ;;
+            "Установить list")                  action_install_cfgs_list ;;
+            "Установить ipset list")            action_install_cfgs_ipset_list ;;
             "Назад") return 0 ;;
         esac
     done

@@ -82,8 +82,13 @@ action_install_cfgs_config() {
         return 1
     }
 
+    [ -n "$PRODUCT_CFGS_CONFIG_DIR" ] && [ -d "$PRODUCT_CFGS_CONFIG_DIR" ] || {
+        gum_notify error "Директория конфигов не найдена для $PRODUCT_ID"
+        return 1
+    }
+
     local imported
-    imported="$(pick_repo_file "$PRODUCT_CFGS_DIR/configurations" "Выберите config из Snowy-Fluffy")" || return 1
+    imported="$(pick_repo_file "$PRODUCT_CFGS_CONFIG_DIR" "Выберите preset")" || return 1
 
     print_header "Предпросмотр config" "normal"
     preview_text_file "$imported"
@@ -109,8 +114,14 @@ action_install_cfgs_list() {
         return 1
     }
 
+    [ -n "$PRODUCT_CFGS_LIST_DIR" ] && [ -d "$PRODUCT_CFGS_LIST_DIR" ] || {
+        gum_notify error "Списки не поддерживаются для $PRODUCT_ID"
+        pause
+        return 1
+    }
+
     local imported
-    imported="$(pick_repo_file "$PRODUCT_CFGS_DIR/lists" "Выберите hostlist из Snowy-Fluffy" "list-*.txt")" || return 1
+    imported="$(pick_repo_file "$PRODUCT_CFGS_LIST_DIR" "Выберите hostlist" "list-*.txt")" || return 1
 
     print_header "Предпросмотр list" "normal"
     preview_text_file "$imported"
@@ -136,8 +147,14 @@ action_install_cfgs_ipset_list() {
         return 1
     }
 
+    [ -n "$PRODUCT_CFGS_LIST_DIR" ] && [ -d "$PRODUCT_CFGS_LIST_DIR" ] || {
+        gum_notify error "Ipset-списки не поддерживаются для $PRODUCT_ID"
+        pause
+        return 1
+    }
+
     local imported
-    imported="$(pick_repo_file "$PRODUCT_CFGS_DIR/lists" "Выберите ipset-list из Snowy-Fluffy" "ipset-*.txt")" || return 1
+    imported="$(pick_repo_file "$PRODUCT_CFGS_LIST_DIR" "Выберите ipset-list" "ipset-*.txt")" || return 1
 
     print_header "Предпросмотр ipset-list" "normal"
     preview_text_file "$imported"

@@ -16,7 +16,6 @@ PRODUCT_DIR=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f4)
 PRODUCT_VER_FILE=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f5)
 PRODUCT_BINLINK=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f6)
 
-PRODUCT_CFGS_REPO="https://github.com/Snowy-Fluffy/zapret.cfgs"
 PRODUCT_CFGS_DIR="/opt/$PRODUCT_ID/zapret.cfgs"
 PRODUCT_CONFIG_FILE="/opt/$PRODUCT_ID/config"
 
