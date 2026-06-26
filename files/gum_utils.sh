@@ -481,6 +481,13 @@ gum_spin() {
     local title="${1:-Загрузка...}"
     local cmd="${2:-}"
 
+    if [ -z "$cmd" ]; then
+        [ ! -t 0 ] && cat > /dev/null 2>&1
+        echo -n "$title ... "
+        echo -e "${COLOR_GREEN}Готово${COLOR_RESET}"
+        return 0
+    fi
+
     if $GUM_AVAILABLE; then
         gum spin --spinner dot --title "$title" -- $cmd
     else
