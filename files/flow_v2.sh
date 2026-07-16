@@ -62,6 +62,7 @@ action_import_config() {
 
 config_import_pick() {
     local path
+    cd / 2>/dev/null || cd "$HOME" 2>/dev/null || true
     while true; do
         print_header "Импорт конфига" "normal" >&2
         echo "[TAB] автодополнение путей" >&2

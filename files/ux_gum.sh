@@ -78,6 +78,7 @@ ui_path_input() {
     local title="$1"
     local result
 
+    cd / 2>/dev/null || cd "$HOME" 2>/dev/null || true
     while true; do
         clear
         print_header "$title" "normal"
