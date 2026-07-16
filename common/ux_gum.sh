@@ -134,7 +134,7 @@ ui_choose_one() {
 
     if $GUM_AVAILABLE; then
         gum choose \
-            --header "$(ui_header | tr '\n' ' ')" \
+            --header "$(ui_header)" \
             --height "$GUM_MENU_HEIGHT" \
             "$@"
     else
@@ -149,9 +149,8 @@ ui_header() {
     local status
     status="$(ui_products_status_line || true)"
 
-    echo
     echo "$status"
-    echo
+    echo " "
 }
 
 print_header() {

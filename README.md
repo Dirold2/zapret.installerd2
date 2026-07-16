@@ -1,56 +1,101 @@
 <div align="center">
 
-# [Snowy-Fluffy/zapret.installer](https://github.com/Snowy-Fluffy/zapret.installer)
+# zapret.installerd2
 
-### Автоматическая установка и удобное управление [bol-van/zapret](https://github.com/bol-van/zapret)
+### Модульный установщик и панель управления [zapret](https://github.com/bol-van/zapret) / [zapret2](https://github.com/bol-van/zapret2)
 
 </div>
 
-Облегчает установку zapret для новичков и тех, кто не хочет разбираться в его работе.  
-Устанавливает [zapret из оффициального репозитория](https://github.com/bol-van/zapret), CLI панель управления и [репозиторий со стратегиями и списками доменов](https://github.com/Snowy-Fluffy/zapret.cfgs).
+Форк [Snowy-Fluffy/zapret.installer](https://github.com/Snowy-Fluffy/zapret.installer) с изоморфной архитектурой продуктов и автоматическим обнаружением модулей.
 
-### Установка  
+Поддерживает одновременную установку **zapret** (`nfqws`) и **zapret2** (`nfqws2`) с общей панелью управления.
 
-Запуск скрипта установки (необходимо наличие *curl* в системе):  
-```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/Snowy-Fluffy/zapret.installer/refs/heads/main/installer.sh)"
+## Возможности
+
+* Автообнаружение продуктов — сканирование `products/*/product.env`
+* Проверка конфигов перед применением
+* Подстановка переменных при импорте: `%BIN%`, `%LISTS%`, `%LUA%`
+* Единое меню управления для всех установленных продуктов
+* Проверка здоровья системы: зависимости, бинарники, сервисы
+* Модульная архитектура без правок основного кода для добавления новых продуктов
+
+## Структура
+
+```text
+├── installer.sh          # Установщик: клонирует репозиторий, создаёт symlink
+├── zapret-control.sh     # Точка входа панели управления
+├── common/               # Общие модули: UI, сервисы, утилиты
+└── products/
+    ├── zapret/           # Продукт: zapret (nfqws)
+    │   ├── product.env   # Метаданные продукта
+    │   ├── init.sh       # Инициализация, health-check
+    │   ├── install.sh    # Установка, обновление
+    │   ├── uninstall.sh  # Удаление
+    │   └── health.sh     # Проверка обновлений
+    └── zapret2/          # Продукт: zapret2 (nfqws2)
+        ├── product.env
+        ├── init.sh
+        ├── install.sh
+        ├── uninstall.sh
+        └── health.sh
 ```
 
-Вызов панели управления:  
+## Установка
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/dirold2/zapret.installerd2/refs/heads/main/installer.sh)"
+```
+
+## Запуск панели управления
+
 ```bash
 zapret
 ```
 
-### Поддержка
+## Поддерживаемые системы
 
-На данный момент поддерживаются дистрибутивы:  
-- Debian, Ubuntu, Mint
-- Fedora
-- Arch Linux, Artix Linux (и их производные)
-- Alt Linux
-- Void Linux
-- Gentoo Linux
-- Redos Linux
-- Oracle Linux
-- OpenSUSE
-- Aipline Linux
-- OpenWrt
-
-> [!IMPORTANT]
-> На Openwrt также советую попробовать [zapret-openwrt](https://github.com/remittor/zapret-openwrt)
+* Debian, Ubuntu, Mint
+* Fedora
+* Arch Linux, Artix Linux и производные
+* Alt Linux
+* Void Linux
+* Gentoo Linux
+* Redos Linux
+* Oracle Linux
+* OpenSUSE
+* Alpine Linux
+* OpenWrt
 
 > [!IMPORTANT]
-> Системы инициализации *runit*, *OpenRC* и *SysVinit* поддерживаются только частично.
+> Системы инициализации `runit`, `OpenRC` и `SysVinit` поддерживаются только частично.
 
-В будущем будет добавлена поддержка других дистрибутивов и систем инициализации.
+## Добавление своего продукта
 
-О всех багах и недочётах сообщайте в [issues](https://github.com/Snowy-Fluffy/zapret.installer/issues) или в чат моего [Telegram-канала](https://t.me/linux_hi_chat).
+Создайте директорию `products/myproduct/` и добавьте в неё:
 
-> [!IMPORTANT]
-> Также советую попробовать [zapret-discord-youtube-linux](https://github.com/Sergeydigl3/zapret-discord-youtube-linux)
+* `product.env` — переменные продукта (`PRODUCT_ID`, `PRODUCT_DIR`, `PRODUCT_SERVICE`, `PRODUCT_BIN_NAME`, ...)
+* `init.sh` — функции инициализации и проверки
+* `install.sh` — функции установки и обновления
+* `uninstall.sh` — функция удаления
+* `health.sh` — функции health-check и проверки обновлений
 
-### Скриншоты
-![Основное меню](https://github.com/user-attachments/assets/1b08f280-e435-4f59-aa60-3749e0f25ba0)
-![Подменю](https://github.com/user-attachments/assets/27c18e1a-2f6b-4aba-a7df-10f53993b365)
+Продукт автоматически обнаружится при следующем запуске панели управления.
 
+### Минимальный пример структуры
 
+```text
+products/myproduct/
+├── product.env
+├── init.sh
+├── install.sh
+├── uninstall.sh
+└── health.sh
+```
+
+## Разработка
+
+Архитектура проекта построена так, чтобы новые продукты добавлялись как отдельные модули, без изменений в ядре установщика. Общие функции, UI и сервисная логика вынесены в `common/`, а логика конкретного продукта — в `products/<name>/`.
+
+## Баги и предложения
+
+Сообщайте в [issues](https://github.com/Dirold2/zapret.installerd2/issues).

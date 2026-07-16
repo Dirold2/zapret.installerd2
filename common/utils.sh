@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export EDITOR="nano"     # или vim, nano, code, helix
+export EDITOR="nano"
 export VISUAL="$EDITOR"
 
 error_exit() {
@@ -112,84 +112,4 @@ fast_exit(){
     $TPUT_E
     echo "Выход по запросу пользователя"
     exit 1
-}
-
-# =========================
-# HEALTH CHECK
-# =========================
-product_health() {
-    local product="${1:-zapret}"
-    local running=0
-
-    case "$product" in
-        zapret)
-            if pgrep -x nfqws >/dev/null 2>&1; then
-                running=1
-            fi
-            if command -v systemctl >/dev/null 2>&1; then
-                systemctl is-active zapret >/dev/null 2>&1 && running=1
-            fi
-            ;;
-        zapret2)
-            if pgrep -x nfqws2 >/dev/null 2>&1; then
-                running=1
-            fi
-            if command -v systemctl >/dev/null 2>&1; then
-                systemctl is-active zapret2 >/dev/null 2>&1 && running=1
-            fi
-            ;;
-    esac
-
-    [[ $running -eq 1 ]]
-}
-
-action_uninstall_soft() {
-    local p="$1"
-    [ -z "$p" ] && return 1
-
-    if [ -z "${PRODUCTS[$p]:-}" ]; then
-        gum_notify error "Данные продукта $p не найдены в массиве PRODUCTS"
-        return 1
-    fi
-
-    local dir service binlink verfile
-    dir=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f4)
-    service=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f3)
-    verfile=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f5)
-    binlink=$(echo "${PRODUCTS[$p]}" | cut -d' ' -f6)
-
-    if ! gum_confirm "Полностью удалить $p?"; then
-        return 0
-    fi
-
-    echo "Остановка сервиса ${service}..."
-    systemctl stop "${service}" >/dev/null 2>&1 || true
-    systemctl disable "${service}" >/dev/null 2>&1 || true
-
-    echo "Удаление файлов..."
-
-    if [ -n "${dir:-}" ]; then
-        sudo rm -rf "$dir"
-    fi
-    if [ -n "${binlink:-}" ]; then
-        sudo rm -f "$binlink"
-    fi
-    if [ -n "${verfile:-}" ]; then
-        sudo rm -f "$verfile"
-    fi
-
-    if [ -n "${service:-}" ]; then
-        sudo rm -f "/etc/systemd/system/${service}"
-        sudo rm -rf "/etc/systemd/system/${service}.d" 2>/dev/null || true
-    else
-        echo "Переменная service пустая, удаление юнитов пропущено!"
-    fi
-
-    echo "Перезапуск демона systemd..."
-    sudo systemctl daemon-reload >/dev/null 2>&1 || true
-    if [ -n "${service:-}" ]; then
-        sudo systemctl reset-failed "${service}" >/dev/null 2>&1 || true
-    fi
-
-    gum_notify success "Продукт $p успешно удален"
 }

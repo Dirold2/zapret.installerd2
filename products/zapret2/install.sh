@@ -1,48 +1,15 @@
 #!/bin/bash
 
 # =========================
-# CONFIGURATION
-# =========================
-declare -A PRODUCTS=(
-    ["zapret"]="bol-van/zapret zapret zapret.service /opt/zapret /opt/zapret-ver zapret"
-    ["zapret2"]="bol-van/zapret2 zapret2 zapret2.service /opt/zapret2 /opt/zapret2-ver zapret2"
-)
-
-PRODUCT_ID="${1:-zapret}"
-PRODUCT_REPO=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f1)
-PRODUCT_NAME=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f2)
-PRODUCT_SERVICE=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f3)
-PRODUCT_DIR=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f4)
-PRODUCT_VER_FILE=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f5)
-PRODUCT_BINLINK=$(echo "${PRODUCTS[$PRODUCT_ID]}" | cut -d' ' -f6)
-
-PRODUCT_CFGS_DIR="/opt/$PRODUCT_ID/zapret.cfgs"
-PRODUCT_CONFIG_FILE="/opt/$PRODUCT_ID/config"
-
-# Цвета
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-log() { echo -e "${GREEN}[INFO]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
-
-# =========================
 # GitHub helpers
 # =========================
 gh_latest_url() {
     local repo="$1"
-
     curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | \
     python3 -c '
 import sys, json
-
 data = json.load(sys.stdin)
-
 tag = data["tag_name"]
-
 print(f"https://github.com/'"$repo"'/archive/refs/tags/{tag}.tar.gz")
 '
 }
@@ -60,17 +27,17 @@ install_release() {
     tmp=$(mktemp -d) || return 1
     fake_backup=$(mktemp -d)
     url=$(gh_latest_url "$PRODUCT_REPO")
-    
+
     [ -z "$url" ] && { rm -rf "$tmp" "$fake_backup"; return 1; }
 
     [ -d "$PRODUCT_DIR/files/fake" ] && cp -r "$PRODUCT_DIR/files/fake"/* "$fake_backup/" 2>/dev/null || true
-    
+
     log "Скачиваю релиз $PRODUCT_ID..."
     curl -fL "$url" -o "$tmp/release.tar.gz" || { rm -rf "$tmp" "$fake_backup"; return 1; }
-    
+
     rm -rf "$PRODUCT_DIR" 2>/dev/null || true
     mkdir -p /opt
-    
+
     tar -xzf "$tmp/release.tar.gz" -C /opt || {
         rm -rf "$tmp" "$fake_backup"
         return 1
@@ -81,7 +48,7 @@ install_release() {
 
     rm -rf "$tmp"
     [ -z "$extracted" ] && { rm -rf "$fake_backup"; return 1; }
-    
+
     mv "$extracted" "$PRODUCT_DIR" || { rm -rf "$fake_backup"; return 1; }
 
     [ -d "$fake_backup" ] && [ "$(ls -A "$fake_backup" 2>/dev/null)" ] &&
@@ -104,7 +71,7 @@ install_git() {
 
 install_cfgs() {
     [ -d "$PRODUCT_CFGS_DIR" ] && return 0
-    git clone "$PRODUCT_CFGS_REPO" "$PRODUCT_CFGS_DIR" || warn "Не удалось клонировать конфиги"
+    [ -n "$PRODUCT_CFGS_REPO" ] && git clone "$PRODUCT_CFGS_REPO" "$PRODUCT_CFGS_DIR" 2>/dev/null || warn "Не удалось клонировать конфиги"
 }
 
 ensure_lists() {
@@ -161,67 +128,57 @@ EOF
     systemctl enable "${PRODUCT_SERVICE}.service" >/dev/null 2>&1 || true
 }
 
-
-
 # =========================
 # MAIN INSTALL
 # =========================
 main_install() {
     read -p "Установить $PRODUCT_ID? (y/N): " answer
     [[ "$answer" =~ ^[Yy] ]] || return 0
-    
-    # Backup
+
     [ -d "$PRODUCT_DIR" ] && {
         read -p "Найден $PRODUCT_DIR. Удалить? (y/N): " answer
         [[ "$answer" =~ ^[Yy] ]] || return 0
         rm -rf "$PRODUCT_DIR"
     }
-    
-    # Dependencies (упрощенно)
+
     command -v iptables >/dev/null 2>/dev/null || apt-get install -y iptables ipset 2>/dev/null || true
-    
-    # Install
+
     if ! install_release; then
         warn "Релиз не удалось установить, использую git"
         install_git || error "Не удалось установить $PRODUCT_ID"
     fi
-    
-    # Build
+
     log "Сборка $PRODUCT_ID..."
-
     cd "$PRODUCT_DIR" || error "Не удалось открыть $PRODUCT_DIR"
-
     make -j"$(nproc)" || error "Ошибка сборки $PRODUCT_ID"
 
-    nfq_bin=$(find "$PRODUCT_DIR" -type f \( -name "nfqws" -o -name "nfqws2" \) | head -n1)    
+    local nfq_bin
+    nfq_bin=$(find "$PRODUCT_DIR" -type f -name "$PRODUCT_BIN_NAME" | head -n1)
 
-    [ -n "$nfq_bin" ] || error "nfqws binary не найден"
-    [ -x "$nfq_bin" ] || error "nfqws binary не executable"
-    # Run installer
+    [ -n "$nfq_bin" ] || error "$PRODUCT_BIN_NAME binary не найден"
+    [ -x "$nfq_bin" ] || error "$PRODUCT_BIN_NAME binary не executable"
+
     [ -f "$PRODUCT_DIR/install_easy.sh" ] && {
         cd "$PRODUCT_DIR"
         sed -i 's/ask_yes_no N/ask_yes_no Y/g' common/installer.sh 2>/dev/null || true
         yes "" | ./install_easy.sh || true
         sed -i 's/ask_yes_no Y/ask_yes_no N/g' common/installer.sh 2>/dev/null || true
     }
-    
-    # Configs
+
     install_cfgs
-    [ -d "$PRODUCT_CFGS_DIR/configurations" ] && {
-        cp -f "$PRODUCT_CFGS_DIR/configurations/general" "$PRODUCT_CONFIG_FILE" || true
+    [ -d "$PRODUCT_CFGS_DIR/presets" ] && {
+        local first_preset
+        first_preset=$(ls "$PRODUCT_CFGS_DIR/presets" 2>/dev/null | head -1)
+        [ -n "$first_preset" ] && cp -f "$PRODUCT_CFGS_DIR/presets/$first_preset" "$PRODUCT_CONFIG_FILE" 2>/dev/null || true
     }
-    [ -d "$PRODUCT_CFGS_DIR/bin" ] && {
-        mkdir -p "$PRODUCT_DIR/files/fake"
-        cp "$PRODUCT_CFGS_DIR/bin/"* "$PRODUCT_DIR/files/fake/" 2>/dev/null || true
-    }
-    
+
     ensure_lists
     ensure_scripts_executable
     ln -sf "/opt/zapret.installer/zapret-control.sh" "/bin/$PRODUCT_ID" 2>/dev/null || true
-    
+
     systemd_install
     systemctl restart "$PRODUCT_SERVICE" 2>/dev/null || true
-    
+
     if product_health "$PRODUCT_SERVICE"; then
         log "$PRODUCT_ID успешно установлен и работает!"
     else
@@ -235,16 +192,16 @@ main_install() {
 main_update() {
     local ver_file_content
     ver_file_content=$(cat "$PRODUCT_VER_FILE" 2>/dev/null || echo "")
-    
+
     if [ "$ver_file_content" = "git" ]; then
         cd "$PRODUCT_DIR" && git pull origin master || install_release
     else
         install_release || install_git
     fi
-    
+
     install_cfgs
     ensure_scripts_executable
     systemctl restart "$PRODUCT_SERVICE" 2>/dev/null || true
-    
+
     log "$PRODUCT_ID обновлен!"
 }

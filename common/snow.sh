@@ -8,6 +8,63 @@ ensure_cfgs_repo() {
     git clone --depth 1 "$PRODUCT_CFGS_REPO" "$PRODUCT_CFGS_DIR" >/dev/null 2>&1 || return 1
 }
 
+validate_config() {
+    local config_file="$1"
+    local nfq_bin=""
+
+    nfq_bin=$(find "$PRODUCT_DIR" -type f -name "$PRODUCT_BIN_NAME" 2>/dev/null | head -n1)
+
+    [ -n "$nfq_bin" ] && [ -x "$nfq_bin" ] || {
+        gum_notify warn "Бинарь $PRODUCT_BIN_NAME не найден, пропускаю проверку"
+        return 0
+    }
+
+    if "$nfq_bin" --dry-run --qnum=100 "@$config_file" >/dev/null 2>&1; then
+        gum_notify ok "Конфиг прошёл проверку"
+        return 0
+    else
+        gum_notify error "Конфиг содержит ошибки!"
+        "$nfq_bin" --dry-run --qnum=100 "@$config_file" 2>&1 | tail -5
+        return 1
+    fi
+}
+
+resolve_config_vars() {
+    local config_file="$1"
+
+    [ -f "$config_file" ] || return 1
+
+    local tmp
+    tmp=$(mktemp) || return 1
+    cp -- "$config_file" "$tmp"
+
+    if [ -n "$PRODUCT_PATH_BIN" ]; then
+        sed -i \
+            -e "s|%BIN%|$PRODUCT_PATH_BIN|g" \
+            -e "s|@[Bb][Ii][Nn]|$PRODUCT_PATH_BIN|g" \
+            "$tmp"
+    fi
+
+    if [ -n "$PRODUCT_PATH_LISTS" ]; then
+        sed -i \
+            -e "s|%LISTS%|$PRODUCT_PATH_LISTS|g" \
+            -e "s|@[Ll][Ii][Ss][Tt][Ss]|$PRODUCT_PATH_LISTS|g" \
+            -e "s|lists/|$PRODUCT_PATH_LISTS/|g" \
+            "$tmp"
+    fi
+
+    if [ -n "$PRODUCT_PATH_LUA" ]; then
+        sed -i \
+            -e "s|%LUA%|$PRODUCT_PATH_LUA|g" \
+            -e "s|@[Ll][Uu][Aa]|$PRODUCT_PATH_LUA|g" \
+            -e "s|lua/|$PRODUCT_PATH_LUA/|g" \
+            "$tmp"
+    fi
+
+    cp -- "$tmp" "$config_file"
+    rm -f "$tmp"
+}
+
 preview_text_file() {
     local file="$1"
 
@@ -98,6 +155,14 @@ action_install_cfgs_config() {
     if ! gum_confirm "Установить этот config в $PRODUCT_CONFIG_FILE ?"; then
         return 1
     fi
+
+    resolve_config_vars "$imported"
+
+    validate_config "$imported" || {
+        if ! gum_confirm "Конфиг содержит ошибки. Всё равно установить?"; then
+            return 1
+        fi
+    }
 
     install_repo_file "$imported" "$PRODUCT_CONFIG_FILE" "Config" || return 1
 
@@ -235,6 +300,18 @@ config = re.sub(
 with open("$PRODUCT_CONFIG_FILE", 'w') as f:
     f.write(config)
 PYEOF
+
+    resolve_config_vars "$PRODUCT_CONFIG_FILE"
+
+    validate_config "$PRODUCT_CONFIG_FILE" || {
+        gum_notify error "Применённая стратегия сломала конфиг!"
+        if [ -f "$BACKUP_DIR$PRODUCT_CONFIG_FILE" ]; then
+            cp -f "$BACKUP_DIR$PRODUCT_CONFIG_FILE" "$PRODUCT_CONFIG_FILE"
+            gum_notify info "Конфиг восстановлен из бэкапа"
+        fi
+        gum_pause
+        return 1
+    }
 
     gum_notify info "Стратегия применена к конфигу"
 
