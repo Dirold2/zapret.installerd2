@@ -172,3 +172,7 @@ notify_ok() { gum_notify ok "$1"; }
 notify_info() { gum_notify info "$1"; }
 notify_warn() { gum_notify warn "$1"; }
 notify_err() { gum_notify err "$1"; }
+
+log() { notify_info "${1:-}"; }
+warn() { notify_warn "${1:-}"; }
+error() { notify_err "${1:-}"; exit 1; }

@@ -113,3 +113,58 @@ fast_exit(){
     echo "Выход по запросу пользователя"
     exit 1
 }
+
+action_install_product() {
+    local p="${1:-}"
+    [ -z "$p" ] && return 1
+
+    local script_path="products/$p/install.sh"
+    if [ -f "$script_path" ]; then
+        (
+            [ -f "common/utils.sh" ] && source "common/utils.sh"
+            [ -f "common/init_common.sh" ] && source "common/init_common.sh"
+
+            product_use "$p" || exit 1
+            source "$script_path"
+            main_install
+        )
+    else
+        gum_notify error "Ошибка: Скрипт установки для $p не найден!"
+        return 1
+    fi
+}
+
+action_update_product() {
+    local p="${1:-}"
+    [ -z "$p" ] && return 1
+
+    local script_path="products/$p/install.sh"
+    if [ -f "$script_path" ]; then
+        (
+            [ -f "common/utils.sh" ] && source "common/utils.sh"
+            [ -f "common/init_common.sh" ] && source "common/init_common.sh"
+
+            product_use "$p" || exit 1
+            source "$script_path"
+            main_update
+        )
+    else
+        gum_notify error "Ошибка: Скрипт обновления для $p не найден!"
+        return 1
+    fi
+}
+
+action_uninstall_soft() {
+    local p="$1"
+    [ -z "$p" ] && return 1
+
+    local script_path="products/$p/uninstall.sh"
+
+    if [ -f "$script_path" ]; then
+        source "$script_path"
+        local_uninstall "$p"
+    else
+        gum_notify error "Ошибка: Файл удаления для $p не найден!"
+        return 1
+    fi
+}

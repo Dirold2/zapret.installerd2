@@ -1,6 +1,6 @@
 #!/bin/bash
 
-action_uninstall_soft() {
+local_uninstall() {
     local p="$1"
     [ -z "$p" ] && return 1
 

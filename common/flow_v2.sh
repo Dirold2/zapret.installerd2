@@ -906,10 +906,10 @@ main_menu_gum() {
                 if gum_confirm "Начать установку сейчас?"; then
                     if [ "$INSTALL_MODE" = "all" ]; then
                         for _p in "${PRODUCTS_LIST[@]}"; do
-                            product_use "$_p" && main_install
+                            action_install_product "$_p"
                         done
                     else
-                        product_use "$INSTALL_MODE" && main_install
+                        action_install_product "$INSTALL_MODE"
                     fi
                 fi
                 gum_pause
