@@ -769,6 +769,19 @@ action_install_blockcheckw() {
     gum style --foreground 2 "OK"
 
     chmod +x "$bin_path" 2>/dev/null || true
+
+    local arch_dir
+    arch_dir="$(uname -m)"
+    local bin_links=("$PRODUCT_DIR/nfq2/nfqws2" "$PRODUCT_DIR/binaries/nfqws2")
+    local target_bin_dir="$PRODUCT_DIR/binaries/linux-${arch_dir}"
+    mkdir -p "$target_bin_dir"
+    for src in "${bin_links[@]}"; do
+        if [ -f "$src" ] && [ ! -f "$target_bin_dir/nfqws2" ]; then
+            ln -sf "$src" "$target_bin_dir/nfqws2" 2>/dev/null || true
+            break
+        fi
+    done
+
     gum_notify info "blockcheckw $tag установлен"
 }
 
