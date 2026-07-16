@@ -923,6 +923,7 @@ action_download_lists() {
             return 1
         fi
     fi
+    chmod 755 "$target_dir" 2>/dev/null || true
 
     for file in "${files[@]}"; do
         echo -n "Загрузка $file... "
@@ -932,6 +933,7 @@ action_download_lists() {
             "$base_url/$file" -o "$tmp" \
             && [ -s "$tmp" ]; then
             mv -f "$tmp" "$target_dir/$file"
+            chmod 644 "$target_dir/$file" 2>/dev/null || true
             gum style --foreground 2 "OK"
         else
             rm -f "$tmp"

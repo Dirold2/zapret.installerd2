@@ -108,12 +108,13 @@ install_cfgs() {
 }
 
 ensure_lists() {
-    mkdir -p "$(dirname "$PRODUCT_CONFIG_FILE")"
-    touch "$PRODUCT_DIR/ipset/zapret-hosts-user.txt" || true
-    touch "$PRODUCT_DIR/ipset/ipset-game.txt" || true
-    touch "$PRODUCT_DIR/ipset/ipset-discord.txt" || true
-    touch "$PRODUCT_DIR/ipset/ipset-exclude-user.txt" || true
-    touch "$PRODUCT_DIR/ipset/ipset-include-user.txt" || true
+    local ipset_dir="$PRODUCT_DIR/ipset"
+    mkdir -p "$ipset_dir"
+    chmod 755 "$ipset_dir" 2>/dev/null || true
+    for f in zapret-hosts-user.txt ipset-game.txt ipset-discord.txt ipset-exclude-user.txt ipset-include-user.txt; do
+        touch "$ipset_dir/$f" 2>/dev/null || true
+        chmod 644 "$ipset_dir/$f" 2>/dev/null || true
+    done
 }
 
 # =========================
