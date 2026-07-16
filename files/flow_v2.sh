@@ -700,7 +700,7 @@ action_run_blockcheck() {
 
 action_download_fake_bins() {
     local target_dir="$PRODUCT_DIR/files/fake"
-    local base_url="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/bin"
+    local base_url="https://github.com/Sergeydigl3/flowseal-strategies-backup/tree/master/bin"
     local files=(
         "quic_initial_dbankcloud_ru.bin"
         "tls_clienthello_max_ru.bin"
