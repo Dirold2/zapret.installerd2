@@ -117,6 +117,13 @@ ensure_lists() {
     done
 }
 
+ensure_scripts_executable() {
+    find "$PRODUCT_DIR" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+    [ -d "$PRODUCT_DIR/init.d" ] && chmod -R +x "$PRODUCT_DIR/init.d/" 2>/dev/null || true
+    [ -d "$PRODUCT_DIR/ipset" ] && chmod -R 755 "$PRODUCT_DIR/ipset/" 2>/dev/null || true
+    [ -d "$PRODUCT_DIR/files" ] && chmod -R 755 "$PRODUCT_DIR/files/" 2>/dev/null || true
+}
+
 # =========================
 # SYSTEMD
 # =========================
@@ -209,6 +216,7 @@ main_install() {
     }
     
     ensure_lists
+    ensure_scripts_executable
     ln -sf "/opt/zapret.installer/zapret-control.sh" "/bin/$PRODUCT_ID" 2>/dev/null || true
     
     systemd_install
@@ -235,6 +243,7 @@ main_update() {
     fi
     
     install_cfgs
+    ensure_scripts_executable
     systemctl restart "$PRODUCT_SERVICE" 2>/dev/null || true
     
     log "$PRODUCT_ID обновлен!"
