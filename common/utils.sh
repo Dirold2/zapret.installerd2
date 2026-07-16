@@ -118,11 +118,11 @@ action_install_product() {
     local p="${1:-}"
     [ -z "$p" ] && return 1
 
-    local script_path="products/$p/install.sh"
+    local script_path="${BASE_DIR}/products/$p/install.sh"
     if [ -f "$script_path" ]; then
         (
-            [ -f "common/utils.sh" ] && source "common/utils.sh"
-            [ -f "common/init_common.sh" ] && source "common/init_common.sh"
+            [ -f "${BASE_DIR}/common/utils.sh" ] && source "${BASE_DIR}/common/utils.sh"
+            [ -f "${BASE_DIR}/common/init_common.sh" ] && source "${BASE_DIR}/common/init_common.sh"
 
             product_use "$p" || exit 1
             source "$script_path"
@@ -138,11 +138,11 @@ action_update_product() {
     local p="${1:-}"
     [ -z "$p" ] && return 1
 
-    local script_path="products/$p/install.sh"
+    local script_path="${BASE_DIR}/products/$p/install.sh"
     if [ -f "$script_path" ]; then
         (
-            [ -f "common/utils.sh" ] && source "common/utils.sh"
-            [ -f "common/init_common.sh" ] && source "common/init_common.sh"
+            [ -f "${BASE_DIR}/common/utils.sh" ] && source "${BASE_DIR}/common/utils.sh"
+            [ -f "${BASE_DIR}/common/init_common.sh" ] && source "${BASE_DIR}/common/init_common.sh"
 
             product_use "$p" || exit 1
             source "$script_path"
@@ -158,7 +158,7 @@ action_uninstall_soft() {
     local p="$1"
     [ -z "$p" ] && return 1
 
-    local script_path="products/$p/uninstall.sh"
+    local script_path="${BASE_DIR}/products/$p/uninstall.sh"
 
     if [ -f "$script_path" ]; then
         source "$script_path"
