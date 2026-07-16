@@ -572,13 +572,21 @@ menu_manage_product() {
         ui_maybe_refresh
         print_header "Управление: $PRODUCT_ID" "normal"
 
+        local has_bcw=false
+        [ -x "$PRODUCT_DIR/blockcheckw/blockcheckw" ] && has_bcw=true
+
         local opts=()
         opts+=("Статус")
         opts+=("Сервис")
         opts+=("Конфиги")
         opts+=("Логи")
-        opts+=("Проверка стратегий (blockcheck)")
-        [ "$PRODUCT_ID" = "zapret2" ] && opts+=("Установить blockcheckw")
+        if $has_bcw; then
+            opts+=("Проверка стратегий (blockcheckw)")
+            opts+=("Удалить blockcheckw")
+        else
+            opts+=("Проверка стратегий (blockcheck)")
+            [ "$PRODUCT_ID" = "zapret2" ] && opts+=("Установить blockcheckw")
+        fi
         opts+=("Назад")
 
         local act
@@ -590,7 +598,9 @@ menu_manage_product() {
             "Конфиги") menu_config ;;
             "Логи") menu_logs ;;
             "Проверка стратегий (blockcheck)") action_run_blockcheck ;;
+            "Проверка стратегий (blockcheckw)") action_run_blockcheckw ;;
             "Установить blockcheckw") action_install_blockcheckw ;;
+            "Удалить blockcheckw") action_uninstall_blockcheckw ;;
             "Назад") return 0 ;;
         esac
     done
@@ -701,16 +711,7 @@ action_install_blockcheckw() {
     local target_dir="$PRODUCT_DIR/blockcheckw"
     local bin_path="$target_dir/blockcheckw"
 
-    if [ -x "$bin_path" ]; then
-        print_header "blockcheckw уже установлен" "normal"
-        gum style "Путь: $bin_path"
-        echo
-        if gum_confirm "Переустановить?"; then
-            rm -rf "$target_dir"
-        else
-            return 0
-        fi
-    fi
+    [ -x "$bin_path" ] && { gum_notify info "blockcheckw уже установлен"; return 0; }
 
     local arch
     arch="$(uname -m)"
@@ -741,7 +742,6 @@ action_install_blockcheckw() {
     print_header "Установка blockcheckw" "normal"
     gum style "Версия:  $tag"
     gum style "Арх:     $arch"
-    gum style "URL:     $url"
     echo
 
     local tmp
@@ -769,13 +769,82 @@ action_install_blockcheckw() {
     gum style --foreground 2 "OK"
 
     chmod +x "$bin_path" 2>/dev/null || true
+    gum_notify info "blockcheckw $tag установлен"
+}
 
-    gum_notify info "blockcheckw $tag установлен в $target_dir"
-    gum style ""
-    gum style --bold "Запуск:"
-    gum style "  cd $PRODUCT_DIR && $bin_path --help"
+action_uninstall_blockcheckw() {
+    local target_dir="$PRODUCT_DIR/blockcheckw"
+
+    [ -d "$target_dir" ] || { gum_notify info "blockcheckw не установлен"; return 0; }
+
+    if gum_confirm "Удалить blockcheckw?"; then
+        rm -rf "$target_dir"
+        gum_notify info "blockcheckw удалён"
+    fi
+}
+
+action_run_blockcheckw() {
+    local bin_path="$PRODUCT_DIR/blockcheckw/blockcheckw"
+
+    if [ ! -x "$bin_path" ]; then
+        if gum_confirm "blockcheckw не установлен. Установить?"; then
+            action_install_blockcheckw || return 1
+        else
+            return 1
+        fi
+    fi
+
+    print_header "blockcheckw ($PRODUCT_ID)" "info"
+    echo
+    gum style --foreground 3 "Быстрый параллельный поиск стратегий (Rust)."
+    gum style --foreground 3 "Для использования нужен список доменов (.txt)."
+    echo
+    gum style --bold "Примеры:"
     gum style "  $bin_path universal --domain-list blocked.txt"
     gum style "  $bin_path status --domain-list domains.txt"
+    gum style "  $bin_path scan --domain example.com"
+    echo
+
+    local domain_list
+    read -erp "Путь к списку доменов (пусто = ручной ввод): " domain_list
+    domain_list="${domain_list/#\~/$HOME}"
+
+    local subcmd
+    subcmd="$(ui_choose_one "Команда" "universal" "status" "scan" "Назад")" || return 0
+    [ "$subcmd" = "Назад" ] && return 0
+
+    local cmd_args=("$subcmd")
+
+    if [ "$subcmd" = "scan" ]; then
+        local domain
+        read -erp "Домен: " domain
+        [ -z "$domain" ] && { gum_notify error "Укажите домен"; return 1; }
+        cmd_args+=("--domain" "$domain")
+    elif [ -n "$domain_list" ] && [ -f "$domain_list" ]; then
+        cmd_args+=("--domain-list" "$domain_list")
+    fi
+
+    clear
+    print_header "blockcheckw $subcmd" "normal"
+    echo
+    gum style --foreground 240 "Ctrl+C — прервать"
+    echo
+
+    local old_trap
+    old_trap=$(trap -p INT TERM 2>/dev/null || true)
+    trap 'echo; gum_notify warn "Прервано"; return 1' INT TERM
+
+    cd "$PRODUCT_DIR"
+    "$bin_path" "${cmd_args[@]}" || {
+        gum_notify warn "blockcheckw завершился с ошибкой"
+        eval "$old_trap" 2>/dev/null || true
+        pause
+        return 1
+    }
+
+    eval "$old_trap" 2>/dev/null || true
+    echo
+    gum_notify info "Выполнение завершено"
     pause
 }
 
