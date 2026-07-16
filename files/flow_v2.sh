@@ -572,14 +572,17 @@ menu_manage_product() {
         ui_maybe_refresh
         print_header "Управление: $PRODUCT_ID" "normal"
 
+        local opts=()
+        opts+=("Статус")
+        opts+=("Сервис")
+        opts+=("Конфиги")
+        opts+=("Логи")
+        opts+=("Проверка стратегий (blockcheck)")
+        [ "$PRODUCT_ID" = "zapret2" ] && opts+=("Установить blockcheckw")
+        opts+=("Назад")
+
         local act
-        act="$(ui_choose_one "Раздел" \
-            "Статус" \
-            "Сервис" \
-            "Конфиги" \
-            "Логи" \
-            "Проверка стратегий (blockcheck)" \
-            "Назад")" || return 0
+        act="$(ui_choose_one "Раздел" "${opts[@]}")" || return 0
 
         case "$act" in
             "Статус") action_show_status ;;
@@ -587,6 +590,7 @@ menu_manage_product() {
             "Конфиги") menu_config ;;
             "Логи") menu_logs ;;
             "Проверка стратегий (blockcheck)") action_run_blockcheck ;;
+            "Установить blockcheckw") action_install_blockcheckw ;;
             "Назад") return 0 ;;
         esac
     done
@@ -688,6 +692,90 @@ action_run_blockcheck() {
             action_restart
         fi
     fi
+    pause
+}
+
+action_install_blockcheckw() {
+    [ "$PRODUCT_ID" = "zapret2" ] || { gum_notify error "blockcheckw только для zapret2"; return 1; }
+
+    local target_dir="$PRODUCT_DIR/blockcheckw"
+    local bin_path="$target_dir/blockcheckw"
+
+    if [ -x "$bin_path" ]; then
+        print_header "blockcheckw уже установлен" "normal"
+        gum style "Путь: $bin_path"
+        echo
+        if gum_confirm "Переустановить?"; then
+            rm -rf "$target_dir"
+        else
+            return 0
+        fi
+    fi
+
+    local arch
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64)  arch="x86_64" ;;
+        aarch64) arch="arm64" ;;
+        armv7l)  arch="arm" ;;
+        i686|i386) arch="x86" ;;
+        mips)    arch="mips" ;;
+        mips64)  arch="mips64" ;;
+        mipsel)  arch="mipsel" ;;
+        ppc)     arch="ppc" ;;
+        riscv64) arch="riscv64" ;;
+        *)
+            gum_notify error "Неизвестная архитектура: $arch"
+            return 1
+            ;;
+    esac
+
+    local tag
+    tag=$(curl -fsSL "https://api.github.com/repos/rcd27/blockcheckw/releases/latest" 2>/dev/null | \
+        grep '"tag_name"' | cut -d'"' -f4)
+    [ -z "$tag" ] && { gum_notify error "Не удалось определить версию"; return 1; }
+
+    local tarball="blockcheckw-linux-${arch}.tar.gz"
+    local url="https://github.com/rcd27/blockcheckw/releases/download/${tag}/${tarball}"
+
+    print_header "Установка blockcheckw" "normal"
+    gum style "Версия:  $tag"
+    gum style "Арх:     $arch"
+    gum style "URL:     $url"
+    echo
+
+    local tmp
+    tmp=$(mktemp -d) || { gum_notify error "Ошибка tmpdir"; return 1; }
+
+    echo -n "Загрузка $tarball... "
+    if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 120 \
+        "$url" -o "$tmp/$tarball"; then
+        rm -rf "$tmp"
+        gum style --foreground 1 "Ошибка"
+        gum_notify error "Не удалось скачать $tarball"
+        return 1
+    fi
+    gum style --foreground 2 "OK"
+
+    echo -n "Распаковка... "
+    mkdir -p "$target_dir"
+    if ! tar -xzf "$tmp/$tarball" -C "$target_dir" 2>/dev/null; then
+        rm -rf "$tmp" "$target_dir"
+        gum style --foreground 1 "Ошибка"
+        gum_notify error "Не удалось распаковать архив"
+        return 1
+    fi
+    rm -rf "$tmp"
+    gum style --foreground 2 "OK"
+
+    chmod +x "$bin_path" 2>/dev/null || true
+
+    gum_notify info "blockcheckw $tag установлен в $target_dir"
+    gum style ""
+    gum style --bold "Запуск:"
+    gum style "  cd $PRODUCT_DIR && $bin_path --help"
+    gum style "  $bin_path universal --domain-list blocked.txt"
+    gum style "  $bin_path status --domain-list domains.txt"
     pause
 }
 
