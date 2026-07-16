@@ -304,9 +304,11 @@ action_show_config_paths() {
     cat <<EOF
 Конфигурация: $PRODUCT_ID
 
-config:   $PRODUCT_CONFIG_FILE
-list:     $PRODUCT_LIST_FILE
-exclude:  $PRODUCT_EXCLUDE_FILE
+config:              $PRODUCT_CONFIG_FILE
+list:                $PRODUCT_LIST_FILE
+exclude:             $PRODUCT_EXCLUDE_FILE
+ipset-exclude-user:  $PRODUCT_IPSET_EXCLUDE_USER
+ipset-include-user:  $PRODUCT_IPSET_INCLUDE_USER
 EOF
 
     pause
@@ -780,6 +782,8 @@ menu_config() {
             "Редактировать config" \
             "Редактировать list" \
             "Редактировать exclude" \
+            "Редактировать ipset-exclude-user" \
+            "Редактировать ipset-include-user" \
             "Импорт конфига" \
             "Экспорт конфига" \
             "Показать пути" \
@@ -787,9 +791,11 @@ menu_config() {
             "Назад")" || return 0
 
         case "$act" in
-            "Редактировать config")  open_editor "$PRODUCT_CONFIG_FILE" ;;
-            "Редактировать list")    open_editor "$PRODUCT_LIST_FILE" ;;
-            "Редактировать exclude") open_editor "$PRODUCT_EXCLUDE_FILE" ;;
+            "Редактировать config")          open_editor "$PRODUCT_CONFIG_FILE" ;;
+            "Редактировать list")            open_editor "$PRODUCT_LIST_FILE" ;;
+            "Редактировать exclude")         open_editor "$PRODUCT_EXCLUDE_FILE" ;;
+            "Редактировать ipset-exclude-user") open_editor "$PRODUCT_IPSET_EXCLUDE_USER" ;;
+            "Редактировать ipset-include-user") open_editor "$PRODUCT_IPSET_INCLUDE_USER" ;;
             "Импорт конфига")        action_import_config ;;
             "Экспорт конфига")       action_export_config ;;
             "Показать пути")         action_show_config_paths ;;

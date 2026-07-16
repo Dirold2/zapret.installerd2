@@ -112,6 +112,8 @@ ensure_lists() {
     touch "$PRODUCT_DIR/ipset/zapret-hosts-user.txt" || true
     touch "$PRODUCT_DIR/ipset/ipset-game.txt" || true
     touch "$PRODUCT_DIR/ipset/ipset-discord.txt" || true
+    touch "$PRODUCT_DIR/ipset/ipset-exclude-user.txt" || true
+    touch "$PRODUCT_DIR/ipset/ipset-include-user.txt" || true
 }
 
 # =========================

@@ -16,6 +16,8 @@ PRODUCT_CONFIG_FILE=""
 PRODUCT_LIST_FILE=""
 PRODUCT_EXCLUDE_FILE=""
 PRODUCT_GAME_IPSET_FILE=""
+PRODUCT_IPSET_EXCLUDE_USER=""
+PRODUCT_IPSET_INCLUDE_USER=""
 PRODUCT_STRATEGIES_REPO="https://github.com/CherretGit/zaprett-repo"
 
 product_use() {
@@ -36,6 +38,8 @@ product_use() {
             PRODUCT_LIST_FILE="/opt/zapret/ipset/zapret-hosts-user.txt"
             PRODUCT_EXCLUDE_FILE="/opt/zapret/ipset/zapret-hosts-user-exclude.txt"
             PRODUCT_GAME_IPSET_FILE="/opt/zapret/ipset/ipset-game.txt"
+            PRODUCT_IPSET_EXCLUDE_USER="/opt/zapret/ipset/ipset-exclude-user.txt"
+            PRODUCT_IPSET_INCLUDE_USER="/opt/zapret/ipset/ipset-include-user.txt"
             ;;
         zapret2)
             PRODUCT_ID="zapret2"
@@ -53,6 +57,8 @@ product_use() {
             PRODUCT_LIST_FILE="/opt/zapret2/ipset/zapret-hosts-user.txt"
             PRODUCT_EXCLUDE_FILE="/opt/zapret2/ipset/zapret-hosts-user-exclude.txt"
             PRODUCT_GAME_IPSET_FILE="/opt/zapret2/ipset/ipset-game.txt"
+            PRODUCT_IPSET_EXCLUDE_USER="/opt/zapret2/ipset/ipset-exclude-user.txt"
+            PRODUCT_IPSET_INCLUDE_USER="/opt/zapret2/ipset/ipset-include-user.txt"
             ;;
         *)
             return 1
@@ -66,6 +72,8 @@ get_product_file() {
         config) echo "$PRODUCT_CONFIG_FILE" ;;
         list)   echo "$PRODUCT_LIST_FILE" ;;
         exclude) echo "$PRODUCT_EXCLUDE_FILE" ;;
+        ipset_exclude_user) echo "$PRODUCT_IPSET_EXCLUDE_USER" ;;
+        ipset_include_user) echo "$PRODUCT_IPSET_INCLUDE_USER" ;;
     esac
 }
 
@@ -76,5 +84,8 @@ product_print_plan() {
     echo "  - сервис:  $PRODUCT_SERVICE"
     echo "  - конфиг:  $PRODUCT_CONFIG_FILE"
     echo "  - лист:    $PRODUCT_LIST_FILE"
+    echo "  - exclude: $PRODUCT_EXCLUDE_FILE"
+    echo "  - ipset-exclude-user: $PRODUCT_IPSET_EXCLUDE_USER"
+    echo "  - ipset-include-user: $PRODUCT_IPSET_INCLUDE_USER"
     echo "  - бинарь:  $PRODUCT_BINLINK"
 }
