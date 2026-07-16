@@ -179,10 +179,6 @@ product_status_text() {
         *)       update_status="доступно $update_status" ;;
     esac
 
-    local fake_missing=()
-    [ ! -f "$PRODUCT_DIR/files/fake/quic_initial_dbankcloud_ru.bin" ] && fake_missing+=("quic_initial_dbankcloud_ru.bin")
-    [ ! -f "$PRODUCT_DIR/files/fake/tls_clienthello_max_ru.bin" ] && fake_missing+=("tls_clienthello_max_ru.bin")
-
     cat <<EOF
 Продукт:   $PRODUCT_ID
 Версия:    $local_ver
@@ -191,7 +187,6 @@ product_status_text() {
 Сервис:    $PRODUCT_SERVICE
 Активен:   $active
 Автостарт: $enabled
-$(for f in "${fake_missing[@]}"; do echo "⚠️  Отсутствует: $f"; done)
 EOF
 }
 
@@ -253,11 +248,6 @@ action_show_status() {
     gum style "Сервис:  $svc"
     gum style "Статус:  $(gum style --foreground "$st_color" "$st") $icon"
     [ -n "$update_status" ] && gum style "Обновление: $update_status"
-
-    local fake_files=("quic_initial_dbankcloud_ru.bin" "tls_clienthello_max_ru.bin")
-    for f in "${fake_files[@]}"; do
-        [ ! -f "$PRODUCT_DIR/files/fake/$f" ] && gum style --foreground 1 "⚠️  Отсутствует: $f"
-    done
 
     echo
 
@@ -740,6 +730,48 @@ action_download_fake_bins() {
     pause
 }
 
+action_download_lists() {
+    local target_dir="$PRODUCT_DIR/files/lists"
+    local base_url="https://raw.githubusercontent.com/Sergeydigl3/flowseal-strategies-backup/master/lists"
+    local files=(
+        "ipset-all.txt"
+        "ipset-exclude.txt"
+        "list-exclude.txt"
+        "list-general.txt"
+        "list-google.txt"
+    )
+
+    print_header "Загрузка lists (Flowseal)" "normal"
+
+    if [ ! -d "$target_dir" ]; then
+        if gum_confirm "Директория $target_dir не найдена. Создать?"; then
+            mkdir -p "$target_dir" || { gum_notify error "Нет прав на создание папки"; return 1; }
+        else
+            return 1
+        fi
+    fi
+
+    for file in "${files[@]}"; do
+        echo -n "Загрузка $file... "
+        local tmp="$target_dir/.${file}.tmp"
+
+        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 60 \
+            "$base_url/$file" -o "$tmp" \
+            && [ -s "$tmp" ]; then
+            mv -f "$tmp" "$target_dir/$file"
+            gum style --foreground 2 "OK"
+        else
+            rm -f "$tmp"
+            gum style --foreground 1 "Ошибка"
+            gum_notify error "Не удалось загрузить $file"
+            return 1
+        fi
+    done
+
+    gum_notify info "Lists обновлены в $target_dir"
+    pause
+}
+
 menu_config() {
     while true; do
         clear
@@ -772,6 +804,7 @@ menu_external_sources() {
         clear
         local ext_opts=()
         ext_opts+=("Скачать Fake бинарники (Flowseal)")
+        ext_opts+=("Скачать Lists (Flowseal)")
         ext_opts+=("Установить preset")
         [ -n "${PRODUCT_STRATEGIES_DIR:-}" ] && ext_opts+=("Установить стратегию (zaprett-repo)")
         [ -n "${PRODUCT_CFGS_LIST_DIR:-}" ] && ext_opts+=("Установить list")
@@ -783,6 +816,7 @@ menu_external_sources() {
 
         case "$act" in
             "Скачать Fake бинарники (Flowseal)") action_download_fake_bins ;;
+            "Скачать Lists (Flowseal)")         action_download_lists ;;
             "Установить preset")               action_install_cfgs_config ;;
             "Установить стратегию (zaprett-repo)") action_install_strategy ;;
             "Установить list")                  action_install_cfgs_list ;;
