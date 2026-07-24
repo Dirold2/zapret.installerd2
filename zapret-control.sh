@@ -26,6 +26,7 @@ source "$BASE_DIR/common/ux_gum.sh"
 source "$BASE_DIR/common/snow.sh"
 source "$BASE_DIR/common/service_common.sh"
 source "$BASE_DIR/common/update.sh"
+source "$BASE_DIR/common/files"
 
 # Load product-specific modules
 source "$BASE_DIR/products/$PRODUCT_ID/product.env"

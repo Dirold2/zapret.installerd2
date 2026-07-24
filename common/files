@@ -1,0 +1,46 @@
+#!/bin/bash
+# common/files — Download sources configuration
+#
+# Each source group is a numbered block (01, 02, ...) with prefix DL_XX_
+# Required variables per group:
+#   DL_XX_NAME    — Display name (for menu)
+#   DL_XX_URL     — Base URL for downloading (raw content)
+#   DL_XX_TARGET  — Subdirectory under $PRODUCT_DIR/files/
+#   DL_XX_FILES   — Array of filenames to download
+#
+# To add a new source: copy any block, increment the number, edit values.
+# Group numbers must be unique, two-digit, zero-padded.
+
+DL_GROUPS=()
+
+# ── Fake бинарники (Flowseal strategies backup) ──────────────────────────
+DL_01_NAME="Flowseal — strategies backup"
+DL_01_URL="https://raw.githubusercontent.com/Sergeydigl3/flowseal-strategies-backup/master/bin"
+DL_01_TARGET="fake"
+DL_01_FILES=(
+    "quic_initial_dbankcloud_ru.bin"
+    "tls_clienthello_max_ru.bin"
+)
+DL_GROUPS+=(01)
+
+# ── Fake бинарники (Flowseal zapret-discord-youtube) ─────────────────────
+DL_02_NAME="Flowseal — Discord/YouTube"
+DL_02_URL="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/main/bin"
+DL_02_TARGET="fake"
+DL_02_FILES=(
+    "ACTIVE_DISCORD_UDP.bin"
+)
+DL_GROUPS+=(02)
+
+# ── Lists (Flowseal strategies backup) ───────────────────────────────────
+DL_03_NAME="Flowseal — lists"
+DL_03_URL="https://raw.githubusercontent.com/Sergeydigl3/flowseal-strategies-backup/master/lists"
+DL_03_TARGET="lists"
+DL_03_FILES=(
+    "ipset-all.txt"
+    "ipset-exclude.txt"
+    "list-exclude.txt"
+    "list-general.txt"
+    "list-google.txt"
+)
+DL_GROUPS+=(03)
