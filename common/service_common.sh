@@ -1,108 +1,5 @@
 #!/bin/bash
 
-service_manage() {
-    local action="$1"
-    local name="$2"
-    case "$INIT_SYSTEM" in
-        systemd)
-            if systemctl cat "$name" >/dev/null 2>&1; then
-                SYSTEMD_PAGER=cat systemctl "$action" "$name"
-            else
-                if [ -n "$PRODUCT_DIR" ] && [ -x "$PRODUCT_DIR/init.d/sysv/$name" ]; then
-                    "$PRODUCT_DIR/init.d/sysv/$name" "$action"
-                else
-                    return 1
-                fi
-            fi
-            ;;
-        openrc)
-            rc-service "$name" "$action"
-            ;;
-        runit|runit-artix)
-            sv "$action" "$name"
-            ;;
-        sysvinit)
-            service "$name" "$action"
-            ;;
-        procd)
-            service "$name" "$action"
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-service_autostart() {
-    local action="$1"
-    local name="$2"
-    case "$INIT_SYSTEM" in
-        systemd)
-            systemctl "$action" "$name"
-            ;;
-        runit)
-            if [ "$action" = "enable" ]; then
-                ln -fs "$PRODUCT_DIR/init.d/runit/$name" /var/service/
-            else
-                rm -f "/var/service/$name"
-            fi
-            ;;
-        runit-artix)
-            if [ "$action" = "enable" ]; then
-                ln -fs "$PRODUCT_DIR/init.d/runit/$name" /run/runit/service/
-            else
-                rm -f "/run/runit/service/$name"
-            fi
-            ;;
-        sysvinit)
-            if [ "$action" = "enable" ]; then
-                update-rc.d "$name" defaults
-            else
-                update-rc.d -f "$name" remove
-            fi
-            ;;
-        openrc)
-            if [ "$action" = "enable" ]; then
-                rc-update add "$name" default
-            else
-                rc-update del "$name"
-            fi
-            ;;
-        procd)
-            service "$name" "$action"
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
-
-service_is_installed() {
-    local name="$1"
-    case "$INIT_SYSTEM" in
-        systemd)
-            systemctl cat "$name" >/dev/null 2>&1 && return 0
-            [ -n "$PRODUCT_DIR" ] && [ -x "$PRODUCT_DIR/init.d/sysv/$name" ] && return 0
-            ;;
-        procd)
-            [ -f "/etc/init.d/$name" ] && return 0
-            ;;
-        runit)
-            [ -d "/var/service/$name" ] && return 0
-            ;;
-        runit-artix)
-            [ -d "/run/runit/service/$name" ] && return 0
-            ;;
-        openrc)
-            rc-service -l 2>/dev/null | grep -q "^$name$" && return 0
-            ;;
-        sysvinit)
-            [ -f "/etc/init.d/$name" ] && return 0
-            ;;
-    esac
-    return 1
-}
-
 service_is_active() {
     local name="$1"
     case "$INIT_SYSTEM" in
@@ -174,11 +71,6 @@ service_state() {
 systemd_unit_exists() {
     local unit="${1%.service}.service"
     systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '{print $1}' | grep -Fxq "$unit"
-}
-
-systemd_timer_exists() {
-    local unit="${1%.timer}.timer"
-    systemctl list-unit-files --type=timer --no-legend 2>/dev/null | awk '{print $1}' | grep -Fxq "$unit"
 }
 
 manage_service() {

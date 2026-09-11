@@ -9,10 +9,12 @@ local_uninstall() {
     fi
 
     echo "Остановка сервиса zapret..."
-    systemctl stop zapret.service >/dev/null 2>&1 || true
-    systemctl disable zapret.service >/dev/null 2>&1 || true
-    systemctl stop zapret-list-update.timer >/dev/null 2>&1 || true
-    systemctl disable zapret-list-update.timer >/dev/null 2>&1 || true
+    manage_service stop >/dev/null 2>&1 || true
+    manage_autostart disable >/dev/null 2>&1 || true
+    if [ "${INIT_SYSTEM:-}" = "systemd" ]; then
+        systemctl stop zapret-list-update.timer >/dev/null 2>&1 || true
+        systemctl disable zapret-list-update.timer >/dev/null 2>&1 || true
+    fi
 
     echo "Удаление файлов..."
     sudo rm -rf /opt/zapret
@@ -24,9 +26,10 @@ local_uninstall() {
     sudo rm -f /etc/systemd/system/zapret-list-update.timer
     sudo rm -f /etc/systemd/system/zapret-list-update.timer.d
 
-    echo "Перезапуск демона systemd..."
-    sudo systemctl daemon-reload >/dev/null 2>&1 || true
-    sudo systemctl reset-failed zapret.service >/dev/null 2>&1 || true
+    if [ "${INIT_SYSTEM:-}" = "systemd" ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl reset-failed zapret.service >/dev/null 2>&1 || true
+    fi
 
     gum_notify success "Продукт $p успешно удален"
 }

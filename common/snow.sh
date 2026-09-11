@@ -12,6 +12,15 @@ validate_config() {
     local config_file="$1"
     local nfq_bin=""
 
+    if [ "$PRODUCT_ID" = "zapret2" ]; then
+        if bash -n "$config_file"; then
+            gum_notify ok "Конфиг zapret2 прошёл проверку"
+            return 0
+        fi
+        gum_notify error "Конфиг zapret2 содержит синтаксическую ошибку"
+        return 1
+    fi
+
     nfq_bin=$(find "$PRODUCT_DIR" -type f -name "$PRODUCT_BIN_NAME" 2>/dev/null | head -n1)
 
     [ -n "$nfq_bin" ] && [ -x "$nfq_bin" ] || {
@@ -156,15 +165,32 @@ action_install_cfgs_config() {
         return 1
     fi
 
-    resolve_config_vars "$imported"
+    if [ "$PRODUCT_ID" != "zapret2" ]; then
+        resolve_config_vars "$imported"
+        validate_config "$imported" || {
+            if ! gum_confirm "Конфиг содержит ошибки. Всё равно установить?"; then
+                return 1
+            fi
+        }
+    fi
 
-    validate_config "$imported" || {
-        if ! gum_confirm "Конфиг содержит ошибки. Всё равно установить?"; then
+    backup_begin || true
+    backup_path "$PRODUCT_CONFIG_FILE" || true
+
+    if [ "$PRODUCT_ID" = "zapret2" ] && [ -f "$PRODUCT_DIR/config.default" ]; then
+        cp -f "$PRODUCT_DIR/config.default" "$PRODUCT_CONFIG_FILE" || return 1
+        printf '\n# Installer configuration: %s\n' "$(basename "$imported")" >> "$PRODUCT_CONFIG_FILE"
+        cat "$imported" >> "$PRODUCT_CONFIG_FILE" || return 1
+        resolve_config_vars "$PRODUCT_CONFIG_FILE" || return 1
+        validate_config "$PRODUCT_CONFIG_FILE" || return 1
+        gum_notify info "Config zapret2 установлен"
+    else
+        cp -f -- "$imported" "$PRODUCT_CONFIG_FILE" || {
+            gum_notify error "Ошибка копирования: Config"
             return 1
-        fi
-    }
-
-    install_repo_file "$imported" "$PRODUCT_CONFIG_FILE" "Config" || return 1
+        }
+        gum_notify info "Config установлен"
+    fi
 
     if gum_confirm "Перезапустить $PRODUCT_ID ?"; then
         action_restart

@@ -46,13 +46,6 @@ action_import_config() {
     clear
     print_header "Импорт конфига" "info"
 
-    if ! grep -qE "NFQWS_OPT|MODE_FILTER|TPWS_OPT" "$imported"; then
-        gum_notify warn "Файл не похож на zapret config"
-        if ! gum_confirm "Всё равно импортировать?"; then
-            return 1
-        fi
-    fi
-
     if ! gum_confirm "Импортировать config в $PRODUCT_CONFIG_FILE ?"; then
         return 1
     fi
@@ -81,33 +74,46 @@ action_import_config() {
 }
 
 config_import_pick() {
-    local path
-    cd / 2>/dev/null || cd "$HOME" 2>/dev/null || true
-    while true; do
-        print_header "Импорт конфига" "normal" >&2
-        echo "[TAB] автодополнение путей" >&2
-        echo "" >&2
-        read -e -p "Путь > " path
-        [ -z "$path" ] && return 1
+    local path caller_home
+    caller_home="$(config_import_caller_home)"
+    local HOME="$caller_home"
+    cd "$caller_home" 2>/dev/null || return 1
 
-        path="${path/#\~/$HOME}"
-        path="${path%\"}"
-        path="${path#\"}"
+    print_header "Импорт конфига" "normal" >&2
+    printf 'TAB — автодополнение. Пустой Enter — назад.\n' >&2
+    printf 'Домашняя папка: %s\n\n' "$caller_home" >&2
 
-        if [ ! -e "$path" ]; then
-            gum_notify error "Файл не найден" >&2
-            pause >&2
-            continue
-        fi
-        if [ ! -f "$path" ]; then
-            gum_notify error "Это не файл" >&2
-            pause >&2
-            continue
-        fi
+    read -erp "Путь > " path || return 1
+    [ -n "$path" ] || return 1
 
-        printf '%s\n' "$path"
-        return 0
-    done
+    path="${path%\"}"
+    path="${path#\"}"
+    case "$path" in
+        "~") path="$caller_home" ;;
+        "~/"*) path="$caller_home/${path:2}" ;;
+    esac
+
+    config_import_validate "$path" || return 1
+    printf '%s\n' "$path"
+}
+
+config_import_caller_home() {
+    local caller="${SUDO_USER:-}"
+    if [ -n "$caller" ] && [ "$caller" != "root" ]; then
+        getent passwd "$caller" 2>/dev/null | cut -d: -f6 && return 0
+    fi
+    printf '%s\n' "$HOME"
+}
+
+config_import_validate() {
+    local path="$1"
+    [ -f "$path" ] || { gum_notify error "Файл не найден: $path" >&2; pause >&2; return 1; }
+    [ -s "$path" ] || { gum_notify error "Файл пустой: $path" >&2; pause >&2; return 1; }
+
+    if ! grep -qE '^[[:space:]]*(NFQWS_OPT|MODE_FILTER|TPWS_OPT)=' "$path"; then
+        gum_notify warn "Файл не похож на конфиг zapret" >&2
+        gum_confirm "Импортировать всё равно?" >&2 || return 1
+    fi
 }
 
 action_export_config() {
@@ -331,15 +337,6 @@ action_restart() { manage_service restart; }
 action_enable()  { manage_autostart enable >/dev/null 2>&1 || true; }
 action_disable() { manage_autostart disable >/dev/null 2>&1 || true; }
 
-product_choose() {
-    local which
-    local _opts=("${PRODUCTS_LIST[@]}" "Назад")
-    which="$(ui_choose_one "Выберите продукт" "${_opts[@]}")" || return 1
-    [ "$which" = "Назад" ] && return 2
-    product_use "$which" || return 1
-    return 0
-}
-
 action_install_mode_choose() {
     local opts=()
     local not_installed=()
@@ -402,42 +399,72 @@ menu_manage_product() {
         ui_maybe_refresh
         print_header "Управление: $PRODUCT_ID" "normal"
 
-        local has_bcw=false
-        [ -x "$PRODUCT_DIR/blockcheckw/blockcheckw" ] && has_bcw=true
-
-        local opts=()
-        opts+=("Статус")
-        opts+=("Сервис")
-        opts+=("Конфиги")
-        opts+=("Логи")
-        if $has_bcw; then
-            opts+=("Проверка стратегий (blockcheckw)")
-            opts+=("Benchmark blockcheckw")
-            local has_results=false
-            for _f in "$PRODUCT_DIR"/*_report_vanilla.txt "$PRODUCT_DIR"/*_scan.json "$PRODUCT_DIR"/*_universal.json "$PRODUCT_DIR"/*_status.json; do
-                [ -f "$_f" ] && has_results=true && break
-            done
-            $has_results && opts+=("Отчёты blockcheckw")
-            opts+=("Удалить blockcheckw")
-        else
-            opts+=("Проверка стратегий (blockcheck)")
-            [ "$PRODUCT_ID" = "zapret2" ] && opts+=("Установить blockcheckw")
-        fi
-        opts+=("Назад")
-
         local act
-        act="$(ui_choose_one "Раздел" "${opts[@]}")" || return 0
+        act="$(ui_choose_one "Раздел" \
+            "Статус" \
+            "Сервис" \
+            "Конфигурация" \
+            "Диагностика" \
+            "Назад")" || return 0
 
         case "$act" in
             "Статус") action_show_status ;;
             "Сервис") menu_service ;;
-            "Конфиги") menu_config ;;
-            "Логи") menu_logs ;;
+            "Конфигурация") menu_config ;;
+            "Диагностика") menu_diagnostics ;;
+            "Назад") return 0 ;;
+        esac
+    done
+}
+
+menu_diagnostics() {
+    while true; do
+        clear
+        print_header "Диагностика: $PRODUCT_ID" "normal"
+
+        local opts=("Проверка стратегий (blockcheck)")
+        [ "$PRODUCT_ID" = "zapret2" ] && opts+=("blockcheckw")
+        opts+=("Назад")
+
+        local act
+        act="$(ui_choose_one "Инструмент" "${opts[@]}")" || return 0
+
+        case "$act" in
             "Проверка стратегий (blockcheck)") action_run_blockcheck ;;
-            "Проверка стратегий (blockcheckw)") action_run_blockcheckw ;;
-            "Benchmark blockcheckw") action_bench_blockcheckw ;;
-            "Отчёты blockcheckw") action_view_bcw_results ;;
+            "blockcheckw") menu_blockcheckw ;;
+            "Назад") return 0 ;;
+        esac
+    done
+}
+
+menu_blockcheckw() {
+    while true; do
+        clear
+        print_header "blockcheckw" "normal"
+
+        local act
+        if [ -x "$PRODUCT_DIR/blockcheckw/blockcheckw" ]; then
+            act="$(ui_choose_one "Действие" \
+                "Запустить проверку" \
+                "Автоподбор для домена" \
+                "Проверить отчёт" \
+                "Отчёты" \
+                "Benchmark" \
+                "Удалить blockcheckw" \
+                "Назад")" || return 0
+        else
+            act="$(ui_choose_one "Действие" \
+                "Установить blockcheckw" \
+                "Назад")" || return 0
+        fi
+
+        case "$act" in
             "Установить blockcheckw") action_install_blockcheckw ;;
+            "Запустить проверку") action_run_blockcheckw ;;
+            "Автоподбор для домена") action_auto_strategy ;;
+            "Проверить отчёт") action_check_bcw_report ;;
+            "Отчёты") action_view_bcw_results ;;
+            "Benchmark") action_bench_blockcheckw ;;
             "Удалить blockcheckw") action_uninstall_blockcheckw ;;
             "Назад") return 0 ;;
         esac
@@ -543,494 +570,78 @@ action_run_blockcheck() {
     pause
 }
 
-action_install_blockcheckw() {
-    [ "$PRODUCT_ID" = "zapret2" ] || { gum_notify error "blockcheckw только для zapret2"; return 1; }
-
-    local target_dir="$PRODUCT_DIR/blockcheckw"
-    local bin_path="$target_dir/blockcheckw"
-
-    [ -x "$bin_path" ] && { gum_notify info "blockcheckw уже установлен"; return 0; }
-
-    local arch
-    arch="$(uname -m)"
-    case "$arch" in
-        x86_64)  arch="x86_64" ;;
-        aarch64) arch="arm64" ;;
-        armv7l)  arch="arm" ;;
-        i686|i386) arch="x86" ;;
-        mips)    arch="mips" ;;
-        mips64)  arch="mips64" ;;
-        mipsel)  arch="mipsel" ;;
-        ppc)     arch="ppc" ;;
-        riscv64) arch="riscv64" ;;
-        *)
-            gum_notify error "Неизвестная архитектура: $arch"
-            return 1
-            ;;
-    esac
-
-    local tag
-    tag=$(curl -fsSL "https://api.github.com/repos/rcd27/blockcheckw/releases/latest" 2>/dev/null | \
-        grep '"tag_name"' | cut -d'"' -f4)
-    [ -z "$tag" ] && { gum_notify error "Не удалось определить версию"; return 1; }
-
-    local tarball="blockcheckw-linux-${arch}.tar.gz"
-    local url="https://github.com/rcd27/blockcheckw/releases/download/${tag}/${tarball}"
-
-    print_header "Установка blockcheckw" "normal"
-    gum style "Версия:  $tag"
-    gum style "Арх:     $arch"
-    echo
-
-    local tmp
-    tmp=$(mktemp -d) || { gum_notify error "Ошибка tmpdir"; return 1; }
-
-    echo -n "Загрузка $tarball... "
-    if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 120 \
-        "$url" -o "$tmp/$tarball"; then
-        rm -rf "$tmp"
-        gum style --foreground 1 "Ошибка"
-        gum_notify error "Не удалось скачать $tarball"
-        return 1
-    fi
-    gum style --foreground 2 "OK"
-
-    echo -n "Распаковка... "
-    mkdir -p "$target_dir"
-    if ! tar -xzf "$tmp/$tarball" -C "$target_dir" 2>/dev/null; then
-        rm -rf "$tmp" "$target_dir"
-        gum style --foreground 1 "Ошибка"
-        gum_notify error "Не удалось распаковать архив"
-        return 1
-    fi
-    rm -rf "$tmp"
-    gum style --foreground 2 "OK"
-
-    chmod +x "$bin_path" 2>/dev/null || true
-
-    local arch_dir
-    arch_dir="$(uname -m)"
-    local bin_links=("$PRODUCT_DIR/nfq2/nfqws2" "$PRODUCT_DIR/binaries/nfqws2")
-    local target_bin_dir="$PRODUCT_DIR/binaries/linux-${arch_dir}"
-    mkdir -p "$target_bin_dir"
-    for src in "${bin_links[@]}"; do
-        if [ -f "$src" ] && [ ! -f "$target_bin_dir/nfqws2" ]; then
-            ln -sf "$src" "$target_bin_dir/nfqws2" 2>/dev/null || true
-            break
-        fi
-    done
-
-    gum_notify info "blockcheckw $tag установлен"
-}
-
-action_uninstall_blockcheckw() {
-    local target_dir="$PRODUCT_DIR/blockcheckw"
-
-    [ -d "$target_dir" ] || { gum_notify info "blockcheckw не установлен"; return 0; }
-
-    if gum_confirm "Удалить blockcheckw?"; then
-        rm -rf "$target_dir"
-        gum_notify info "blockcheckw удалён"
-    fi
-}
-
-action_view_bcw_results() {
-    local files=()
-    while IFS= read -r f; do
-        files+=("$(basename "$f")")
-    done < <(find "$PRODUCT_DIR" -maxdepth 1 \( -name '*_report_vanilla.txt' -o -name '*_scan.json' -o -name '*_universal.json' -o -name '*_status.json' \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
-
-    [ ${#files[@]} -eq 0 ] && { gum_notify warn "Отчётов blockcheckw не найдено"; return 0; }
-
-    files+=("Удалить все" "Назад")
-
-    while true; do
-        local act
-        act="$(ui_choose_one "Отчёты blockcheckw" "${files[@]}")" || return 0
-
-        case "$act" in
-            "Назад") return 0 ;;
-            "Удалить все")
-                if gum_confirm "Удалить все отчёты blockcheckw?"; then
-                    rm -f "$PRODUCT_DIR"/*_report_vanilla.txt "$PRODUCT_DIR"/*_scan.json "$PRODUCT_DIR"/*_universal.json "$PRODUCT_DIR"/*_status.json
-                    gum_notify info "Отчёты удалены"
-                fi
-                return 0
-                ;;
-            *)
-                local fpath="$PRODUCT_DIR/$act"
-                [ -f "$fpath" ] || continue
-                clear
-                print_header "$act" "normal"
-                echo
-                if [[ "$act" == *.json ]]; then
-                    if command -v python3 >/dev/null 2>&1; then
-                        python3 -m json.tool "$fpath" 2>/dev/null || cat "$fpath"
-                    else
-                        cat "$fpath"
-                    fi
-                elif command -v bat >/dev/null 2>&1; then
-                    bat --style=plain --paging=never "$fpath"
-                else
-                    cat "$fpath"
-                fi
-                echo
-                pause
-                ;;
-        esac
-    done
-}
-
-_bcw_config() {
-    local cfg="$PRODUCT_DIR/blockcheckw/config.env"
-    [ -f "$cfg" ] && source "$cfg"
-}
-
-_bcw_workers() {
-    _bcw_config
-    echo "${BCW_WORKERS:-8}"
-}
-
-action_bench_blockcheckw() {
-    local bin_path="$PRODUCT_DIR/blockcheckw/blockcheckw"
-
-    if [ ! -x "$bin_path" ]; then
-        gum_notify error "blockcheckw не установлен"; return 1
-    fi
-
-    print_header "Benchmark blockcheckw" "normal"
-    echo
-    gum style --foreground 3 "Подбор оптимального числа воркеров."
-    gum style --foreground 3 "Тест занимает ~3.5 мин (7 уровней по 30 сек)."
-    echo
-
-    local domain
-    read -erp "Домен для теста (по умолчанию discord.com): " domain
-    domain="${domain:-discord.com}"
-
-    clear
-    print_header "benchmark — $domain" "normal"
-    echo
-    gum style --foreground 240 "Ctrl+C — прервать"
-    echo
-
-    local old_trap
-    old_trap=$(trap -p INT TERM 2>/dev/null || true)
-    trap 'echo; gum_notify warn "Прервано"; return 1' INT TERM
-
-    cd "$PRODUCT_DIR"
-    "$bin_path" benchmark -d "$domain"; rc=$?
-
-    eval "$old_trap" 2>/dev/null || true
-
-    if [ "$rc" -ne 0 ]; then
-        gum_notify warn "benchmark завершился с ошибкой"
-        pause
-        return 1
-    fi
-
-    echo
-    gum style --bold "Рекомендовано из вывода выше:"
-    local recommended
-    read -erp "Сколько воркеров записать (Enter = пропустить): " recommended
-
-    if [ -n "$recommended" ] && [ "$recommended" -gt 0 ] 2>/dev/null; then
-        local cfg_dir="$PRODUCT_DIR/blockcheckw"
-        mkdir -p "$cfg_dir"
-        echo "BCW_WORKERS=$recommended" > "$cfg_dir/config.env"
-        gum_notify info "Сохранено: BCW_WORKERS=$recommended → $cfg_dir/config.env"
-    else
-        gum_notify info "Пропущено"
-    fi
-
-    pause
-}
-
-action_run_blockcheckw() {
-    local bin_path="$PRODUCT_DIR/blockcheckw/blockcheckw"
-
-    if [ ! -x "$bin_path" ]; then
-        if gum_confirm "blockcheckw не установлен. Установить?"; then
-            action_install_blockcheckw || return 1
-        else
-            return 1
-        fi
-    fi
-
-    local bcw_cfg="$PRODUCT_DIR/blockcheckw/config.env"
-    if [ ! -f "$bcw_cfg" ]; then
-        gum style --foreground 3 "Впервые запускаете blockcheckw?"
-        if gum_confirm "Запустить benchmark для подбора воркеров? (~3.5 мин)"; then
-            action_bench_blockcheckw
-        fi
-    fi
-
-    local saved_workers
-    saved_workers="$(_bcw_workers)"
-
-    print_header "blockcheckw ($PRODUCT_ID)" "info"
-    echo
-    gum style --foreground 3 "Быстрый параллельный поиск стратегий (Rust)."
-    gum style --foreground 240 "Воркеров: $saved_workers | scan 300 сек | universal 5 доменов"
-    echo
-
-    local domain_list
-    read -erp "Путь к списку доменов (пусто = ручной ввод): " domain_list
-    domain_list="${domain_list/#\~/$HOME}"
-
-    local subcmd
-    subcmd="$(ui_choose_one "Команда" "universal" "status" "scan" "Назад")" || return 0
-    [ "$subcmd" = "Назад" ] && return 0
-
-    local cmd_args=("$subcmd")
-
-    if [ "$subcmd" = "scan" ]; then
-        local domain
-        read -erp "Домен: " domain
-        [ -z "$domain" ] && { gum_notify error "Укажите домен"; return 1; }
-        cmd_args+=("--domain" "$domain")
-
-        local timeout_s
-        read -erp "Таймаут скана в секундах (по умолчанию 300, 0=без лимита): " timeout_s
-        timeout_s="${timeout_s:-300}"
-        [ "$timeout_s" != "0" ] && cmd_args+=("--timeout" "$timeout_s")
-    elif [ "$subcmd" = "universal" ]; then
-        if [ -z "$domain_list" ] || [ ! -f "$domain_list" ]; then
-            read -erp "Путь к списку доменов (.txt): " domain_list
-            domain_list="${domain_list/#\~/$HOME}"
-            [ -z "$domain_list" ] || [ ! -f "$domain_list" ] && { gum_notify error "Файл не найден: $domain_list"; return 1; }
-        fi
-        cmd_args+=("--domain-list" "$domain_list")
-
-        local sample_n
-        read -erp "Сколько доменов тестировать (по умолчанию 5): " sample_n
-        sample_n="${sample_n:-5}"
-        [ "$sample_n" != "10" ] && cmd_args+=("--sample" "$sample_n")
-    else
-        if [ -z "$domain_list" ] || [ ! -f "$domain_list" ]; then
-            read -erp "Путь к списку доменов (.txt): " domain_list
-            domain_list="${domain_list/#\~/$HOME}"
-            [ -z "$domain_list" ] || [ ! -f "$domain_list" ] && { gum_notify error "Файл не найден: $domain_list"; return 1; }
-        fi
-        cmd_args+=("--domain-list" "$domain_list")
-    fi
-
-    local workers
-    read -erp "Воркеров (по умолчанию $saved_workers): " workers
-    workers="${workers:-$saved_workers}"
-    cmd_args=("-w" "$workers" "${cmd_args[@]}")
-
-    clear
-    print_header "blockcheckw $subcmd" "normal"
-    echo
-    gum style --foreground 240 "Ctrl+C — прервать"
-    echo
-
-    local old_trap
-    old_trap=$(trap -p INT TERM 2>/dev/null || true)
-    trap 'echo; gum_notify warn "Прервано"; return 1' INT TERM
-
-    cd "$PRODUCT_DIR"
-    "$bin_path" "${cmd_args[@]}"; rc=$?
-
-    eval "$old_trap" 2>/dev/null || true
-
-    if [ "$rc" -ne 0 ]; then
-        gum_notify warn "blockcheckw завершился с ошибкой"
-        pause
-        return 1
-    fi
-
-    echo
-    gum_notify info "Выполнение завершено. Отчёты: $PRODUCT_DIR/*_report_vanilla.txt"
-    pause
-}
-
 _download_from_group() {
-    local grp="$1"
-    local _v
-    _v="DL_${grp}_NAME";    local name="${!_v:-}"
-    _v="DL_${grp}_URL";     local base_url="${!_v:-}"
-    _v="DL_${grp}_TARGET";  local target_subdir="${!_v:-}"
-    local files_var="DL_${grp}_FILES[@]"
+    local grp="$1" _v name base_url target_subdir files_var
+    _v="DL_${grp}_NAME"; local name="${!_v:-}"
+    _v="DL_${grp}_URL"; local base_url="${!_v:-}"
+    _v="DL_${grp}_TARGET"; local target_subdir="${!_v:-}"
+    files_var="DL_${grp}_FILES[@]"
     local files=("${!files_var}")
-
     local target_dir="$PRODUCT_DIR/files/$target_subdir"
 
-    print_header "Загрузка: $name" "normal"
-
-    if [ ! -d "$target_dir" ]; then
-        if gum_confirm "Директория $target_dir не найдена. Создать?"; then
-            mkdir -p "$target_dir" || { gum_notify error "Нет прав на создание папки"; return 1; }
-        else
-            return 1
-        fi
-    fi
-    chmod 755 "$target_dir" 2>/dev/null || true
-
-    local ok=0 fail=0
-    for file in "${files[@]}"; do
-        echo -n "  $file ... "
-        local tmp="$target_dir/.${file}.tmp"
-        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 60 \
-            "$base_url/$file" -o "$tmp" \
-            && [ -s "$tmp" ]; then
-            mv -f "$tmp" "$target_dir/$file"
-            chmod 644 "$target_dir/$file" 2>/dev/null || true
-            gum style --foreground 2 "OK"
-            ((ok++))
-        else
-            rm -f "$tmp"
-            gum style --foreground 1 "Ошибка"
-            ((fail++))
-        fi
-    done
-
-    echo ""
-    gum_notify info "Загружено: $ok, ошибок: $fail — $target_dir"
-
-    if [ "$target_subdir" = "fake" ] && [ "$ok" -gt 0 ]; then
-        if gum_confirm "Перезапустить $PRODUCT_ID ?"; then
-            action_restart
-        fi
-    fi
-    pause
-}
-
-action_download_fake_bins() {
-    local opts=() grp _v _target _name
-    for grp in "${DL_GROUPS[@]}"; do
-        _v="DL_${grp}_TARGET"; _target="${!_v:-}"
-        [ "$_target" = "fake" ] || continue
-        _v="DL_${grp}_NAME"; _name="${!_v:-Group $grp}"
-        opts+=("$_name")
-    done
-    [ ${#opts[@]} -eq 0 ] && { gum_notify warn "Нет групп fake-бинарников в common/files"; return 0; }
-    opts+=("Все fake-группы" "Назад")
-
-    local act
-    act="$(ui_choose_one "Fake бинарники" "${opts[@]}")" || return 0
-
-    case "$act" in
-        "Все fake-группы")
-            for grp in "${DL_GROUPS[@]}"; do
-                _v="DL_${grp}_TARGET"; [ "${!_v:-}" = "fake" ] || continue
-                _download_from_group "$grp"
-            done
-            ;;
-        "Назад") return 0 ;;
-        *)
-            for grp in "${DL_GROUPS[@]}"; do
-                _v="DL_${grp}_NAME"; [ "${!_v:-}" = "$act" ] && { _download_from_group "$grp"; break; }
-            done
-            ;;
-    esac
-}
-
-action_download_lists() {
-    local opts=() grp _v _target _name
-    for grp in "${DL_GROUPS[@]}"; do
-        _v="DL_${grp}_TARGET"; _target="${!_v:-}"
-        [ "$_target" = "lists" ] || continue
-        _v="DL_${grp}_NAME"; _name="${!_v:-Group $grp}"
-        opts+=("$_name")
-    done
-    [ ${#opts[@]} -eq 0 ] && { gum_notify warn "Нет групп lists в common/files"; return 0; }
-    opts+=("Все list-группы" "Назад")
-
-    local act
-    act="$(ui_choose_one "Lists" "${opts[@]}")" || return 0
-
-    case "$act" in
-        "Все list-группы")
-            for grp in "${DL_GROUPS[@]}"; do
-                _v="DL_${grp}_TARGET"; [ "${!_v:-}" = "lists" ] || continue
-                _download_from_group "$grp"
-            done
-            ;;
-        "Назад") return 0 ;;
-        *)
-            for grp in "${DL_GROUPS[@]}"; do
-                _v="DL_${grp}_NAME"; [ "${!_v:-}" = "$act" ] && { _download_from_group "$grp"; break; }
-            done
-            ;;
-    esac
-}
-
-action_github_folder_download() {
-    print_header "Скачать из GitHub папки" "normal"
-
-    local repo_path
-    repo_path="$(gum_input "owner/repo/path (напр. Flowseal/zapret-discord-youtube/bin)")" || return 0
-    repo_path="${repo_path#/}"
-    repo_path="${repo_path#https://github.com/}"
-
-    local api_url="https://api.github.com/repos/${repo_path}"
-
-    echo "Загрузка списка файлов из $repo_path ..."
-    local json
-    json="$(curl -fsSL --retry 2 --connect-timeout 10 --max-time 30 "$api_url" 2>/dev/null)" || {
-        gum_notify error "Не удалось получить список файлов"
+    [ -n "$base_url" ] && [ -n "$target_subdir" ] && [ "${#files[@]}" -gt 0 ] || {
+        gum_notify error "Некорректная группа загрузки: $grp"
         return 1
     }
 
-    local names=()
-    while IFS= read -r name; do
-        names+=("$name")
-    done < <(echo "$json" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    if isinstance(data, list):
-        for item in data:
-            if item.get('type') == 'file':
-                print(item['name'])
-except: pass
-" 2>/dev/null)
+    print_header "Загрузка: $name" "normal"
+    mkdir -p "$target_dir" || { gum_notify error "Не удалось создать $target_dir"; return 1; }
+    chmod 755 "$target_dir" 2>/dev/null || true
 
-    if [ ${#names[@]} -eq 0 ]; then
-        gum_notify warn "Файлов не найдено (или это не папка)"
-        return 1
-    fi
-
-    local selected
-    selected="$(gum choose --no-limit --header "Выберите файлы для скачивания" "${names[@]}")" || return 0
-
-    [ -z "$selected" ] && { gum_notify warn "Ничего не выбрано"; return 0; }
-
-    local raw_base="https://raw.githubusercontent.com/${repo_path}"
-    local target_dir
-    target_dir="$(gum_input "Куда сохранить (относительно $PRODUCT_DIR/files/)" "fake")" || return 0
-    target_dir="$PRODUCT_DIR/files/$target_dir"
-
-    if [ ! -d "$target_dir" ]; then
-        mkdir -p "$target_dir" || { gum_notify error "Нет прав на создание папки"; return 1; }
-    fi
-
-    echo ""
-    local ok=0 fail=0
-    while IFS= read -r file; do
-        [ -z "$file" ] && continue
-        echo -n "  $file ... "
-        local tmp="$target_dir/.${file}.tmp"
+    local file tmp ok=0 fail=0
+    for file in "${files[@]}"; do
+        printf '  %s ... ' "$file"
+        tmp="$target_dir/.${file}.tmp"
         if curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 60 \
-            "$raw_base/$file" -o "$tmp" \
-            && [ -s "$tmp" ]; then
+            "$base_url/$file" -o "$tmp" && [ -s "$tmp" ]; then
             mv -f "$tmp" "$target_dir/$file"
             chmod 644 "$target_dir/$file" 2>/dev/null || true
             gum style --foreground 2 "OK"
-            ((ok++))
+            ((ok += 1))
         else
             rm -f "$tmp"
             gum style --foreground 1 "Ошибка"
-            ((fail++))
+            ((fail += 1))
         fi
-    done <<< "$selected"
+    done
 
-    echo ""
     gum_notify info "Загружено: $ok, ошибок: $fail — $target_dir"
+    if [ "$target_subdir" = "fake" ] && [ "$ok" -gt 0 ] && gum_confirm "Перезапустить $PRODUCT_ID?"; then
+        action_restart
+    fi
     pause
 }
+
+action_download_group() {
+    local target="$1" title="$2" all_label="$3" opts=() grp _v group_target name
+    for grp in "${DL_GROUPS[@]}"; do
+        _v="DL_${grp}_TARGET"; group_target="${!_v:-}"
+        [ "$group_target" = "$target" ] || continue
+        _v="DL_${grp}_NAME"; name="${!_v:-Группа $grp}"
+        opts+=("$name")
+    done
+    [ "${#opts[@]}" -gt 0 ] || { gum_notify warn "Нет источников: $title"; return 0; }
+    opts+=("$all_label" "Назад")
+
+    local act
+    act="$(ui_choose_one "$title" "${opts[@]}")" || return 0
+    case "$act" in
+        "$all_label")
+            for grp in "${DL_GROUPS[@]}"; do
+                _v="DL_${grp}_TARGET"; [ "${!_v:-}" = "$target" ] && _download_from_group "$grp"
+            done
+            ;;
+        "Назад") return 0 ;;
+        *)
+            for grp in "${DL_GROUPS[@]}"; do
+                _v="DL_${grp}_NAME"; [ "${!_v:-}" = "$act" ] && { _download_from_group "$grp"; break; }
+            done
+            ;;
+    esac
+}
+
+action_download_fake_bins() { action_download_group "fake" "Fake бинарники" "Все fake-группы"; }
+action_download_lists() { action_download_group "lists" "Lists" "Все list-группы"; }
 
 menu_config() {
     while true; do
@@ -1065,7 +676,6 @@ menu_external_sources() {
         local ext_opts=()
         ext_opts+=("Скачать Fake бинарники")
         ext_opts+=("Скачать Lists")
-        ext_opts+=("Скачать из GitHub папки")
         ext_opts+=("Установить preset")
         [ -n "${PRODUCT_STRATEGIES_DIR:-}" ] && ext_opts+=("Установить стратегию (zaprett-repo)")
         [ -n "${PRODUCT_CFGS_LIST_DIR:-}" ] && ext_opts+=("Установить list")
@@ -1076,9 +686,8 @@ menu_external_sources() {
         act="$(ui_choose_one "Внешние источники (Download/Sync)" "${ext_opts[@]}")" || return 0
 
         case "$act" in
-            "Скачать Fake бинарники")       action_download_fake_bins ;;
+            "Скачать Fake бинарники")      action_download_fake_bins ;;
             "Скачать Lists")               action_download_lists ;;
-            "Скачать из GitHub папки")      action_github_folder_download ;;
             "Установить preset")           action_install_cfgs_config ;;
             "Установить стратегию (zaprett-repo)") action_install_strategy ;;
             "Установить list")             action_install_cfgs_list ;;
@@ -1143,7 +752,7 @@ main_menu_gum() {
         fi
 
         if $has_any; then
-            opts+=("$(gum style --foreground 1 'Удаление')")
+            opts+=($'\033[1;38;2;168;93;93mУдаление\033[0m')
         fi
 
         opts+=("Выход")
@@ -1177,7 +786,7 @@ main_menu_gum() {
             "Обновление")
                 menu_update
                 ;;
-            "Удаление")
+            "Удаление"|$'\033[1;38;2;168;93;93mУдаление\033[0m')
                 local del_opts=()
 
                 for _p in "${PRODUCTS_LIST[@]}"; do

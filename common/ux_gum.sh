@@ -1,13 +1,5 @@
 #!/bin/bash
 
-ux_confirm() {
-    gum_confirm "$1"
-}
-
-ux_choose_one() {
-    gum_choose_one "$@"
-}
-
 ux_msg() {
     local msg="$1"
     if $GUM_AVAILABLE; then
@@ -36,44 +28,6 @@ print_header() {
     gum_header "$title" "" "$style"
 }
 
-resolve_config_path() {
-    local input="$1"
-
-    input="${input/#\~/$HOME}"
-    input="$(realpath -m "$input" 2>/dev/null || echo "$input")"
-
-    if [ -f "$input" ]; then
-        printf '%s\n' "$input"
-        return 0
-    fi
-
-    for ext in "" ".conf" ".config" ".txt"; do
-        if [ -f "${input}${ext}" ]; then
-            printf '%s\n' "${input}${ext}"
-            return 0
-        fi
-    done
-
-    if [ -d "$input" ]; then
-
-        local candidate
-
-        for candidate in \
-            config \
-            *.conf \
-            *.config \
-            *.txt; do
-
-            [ -f "$input/$candidate" ] || continue
-
-            printf '%s\n' "$input/$candidate"
-            return 0
-        done
-    fi
-
-    return 1
-}
-
 ui_path_input() {
     local title="$1"
     local result
@@ -83,9 +37,6 @@ ui_path_input() {
         clear
         print_header "$title" "normal"
 
-        echo
-        gum style --foreground 240 \
-            "TAB → автодополнение | Ctrl+C → отмена"
         echo
 
         read -erp "path> " result
@@ -134,6 +85,7 @@ ui_choose_one() {
 
     if $GUM_AVAILABLE; then
         gum choose \
+            --no-strip-ansi \
             --header "$(ui_header)" \
             --height "$GUM_MENU_HEIGHT" \
             "$@"

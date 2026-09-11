@@ -3,15 +3,18 @@
 # =========================
 # GitHub helpers
 # =========================
-gh_latest_url() {
+gh_latest_tag() {
     local repo="$1"
     curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | \
-    python3 -c '
-import sys, json
-data = json.load(sys.stdin)
-tag = data["tag_name"]
-print(f"https://github.com/'"$repo"'/archive/refs/tags/{tag}.tar.gz")
-'
+        python3 -c 'import sys, json; print(json.load(sys.stdin)["tag_name"])'
+}
+
+gh_release_url() {
+    local repo="$1" tag="$2" commit
+    commit=$(git ls-remote "https://github.com/$repo.git" "refs/tags/$tag^{}" "refs/tags/$tag" | \
+        awk 'NR == 1 { print $1 }')
+    [ -n "$commit" ] || return 1
+    printf 'https://github.com/%s/archive/%s.tar.gz\n' "$repo" "$commit"
 }
 
 get_latest_version() {
@@ -23,19 +26,19 @@ get_latest_version() {
 # INSTALL CORE
 # =========================
 install_release() {
-    local tmp url extracted fake_backup
+    local tmp tag url extracted fake_backup ver
     tmp=$(mktemp -d) || return 1
     fake_backup=$(mktemp -d)
-    url=$(gh_latest_url "$PRODUCT_REPO")
+    tag=$(gh_latest_tag "$PRODUCT_REPO") || { rm -rf "$tmp" "$fake_backup"; return 1; }
+    url=$(gh_release_url "$PRODUCT_REPO" "$tag") || { rm -rf "$tmp" "$fake_backup"; return 1; }
 
-    [ -z "$url" ] && { rm -rf "$tmp" "$fake_backup"; return 1; }
+    [ -z "$tag" ] || [ -z "$url" ] && { rm -rf "$tmp" "$fake_backup"; return 1; }
 
     [ -d "$PRODUCT_DIR/files/fake" ] && cp -r "$PRODUCT_DIR/files/fake"/* "$fake_backup/" 2>/dev/null || true
 
     log "Скачиваю релиз $PRODUCT_ID..."
     curl -fL "$url" -o "$tmp/release.tar.gz" || { rm -rf "$tmp" "$fake_backup"; return 1; }
 
-    rm -rf "$PRODUCT_DIR" 2>/dev/null || true
     mkdir -p /opt
 
     tar -xzf "$tmp/release.tar.gz" -C /opt || {
@@ -47,16 +50,19 @@ install_release() {
     extracted="/opt/$extracted"
 
     rm -rf "$tmp"
-    [ -z "$extracted" ] && { rm -rf "$fake_backup"; return 1; }
+    [ -z "$extracted" ] || [ ! -d "$extracted" ] || [ ! -f "$extracted/Makefile" ] && {
+        rm -rf "$extracted" "$fake_backup"
+        return 1
+    }
 
+    rm -rf "$PRODUCT_DIR" || { rm -rf "$extracted" "$fake_backup"; return 1; }
     mv "$extracted" "$PRODUCT_DIR" || { rm -rf "$fake_backup"; return 1; }
 
     [ -d "$fake_backup" ] && [ "$(ls -A "$fake_backup" 2>/dev/null)" ] &&
         cp -r "$fake_backup"/* "$PRODUCT_DIR/files/fake/" 2>/dev/null || true
     rm -rf "$fake_backup"
 
-    local ver
-    ver=$(echo "$url" | sed 's/.*\/tags\///; s/\.tar\.gz$//; s/^v//')
+    ver=${tag#v}
     echo "${ver:-release}" > "$PRODUCT_VER_FILE"
     log "$PRODUCT_ID установлен из релиза"
 }
@@ -74,6 +80,52 @@ install_cfgs() {
     [ -n "$PRODUCT_CFGS_REPO" ] && git clone "$PRODUCT_CFGS_REPO" "$PRODUCT_CFGS_DIR" 2>/dev/null || warn "Не удалось клонировать конфиги"
 }
 
+install_product_config() {
+    local default_config="${PRODUCT_DEFAULT_CONFIG:-}"
+    local config_file
+
+    config_file="$PRODUCT_CONFIG_FILE"
+
+    # Keep installation independent from the interactive snow module.
+    resolve_installed_config_paths() {
+        local file="$1"
+        [ -f "$file" ] || return 1
+        [ -n "${PRODUCT_PATH_BIN:-}" ] && sed -i \
+            -e "s|%BIN%|$PRODUCT_PATH_BIN|g" \
+            -e "s|@[Bb][Ii][Nn]|$PRODUCT_PATH_BIN|g" "$file"
+        [ -n "${PRODUCT_PATH_LISTS:-}" ] && sed -i \
+            -e "s|%LISTS%|$PRODUCT_PATH_LISTS|g" \
+            -e "s|@[Ll][Ii][Ss][Tt][Ss]|$PRODUCT_PATH_LISTS|g" \
+            -e "s|lists/|$PRODUCT_PATH_LISTS/|g" "$file"
+        [ -n "${PRODUCT_PATH_LUA:-}" ] && sed -i \
+            -e "s|%LUA%|$PRODUCT_PATH_LUA|g" \
+            -e "s|@[Ll][Uu][Aa]|$PRODUCT_PATH_LUA|g" \
+            -e "s|lua/|$PRODUCT_PATH_LUA/|g" "$file"
+    }
+    local source_config=""
+
+    mkdir -p "$(dirname "$PRODUCT_CONFIG_FILE")" || return 1
+
+    if [ "$PRODUCT_ID" = "zapret2" ] && [ -f "$PRODUCT_DIR/config.default" ]; then
+        source_config="$PRODUCT_DIR/config.default"
+        [ -n "$default_config" ] && [ -f "$PRODUCT_CFGS_CONFIG_DIR/$default_config" ] && {
+            cp -f "$source_config" "$PRODUCT_CONFIG_FILE" || return 1
+            printf '\n# Installer configuration: %s\n' "$default_config" >> "$PRODUCT_CONFIG_FILE"
+            cat "$PRODUCT_CFGS_CONFIG_DIR/$default_config" >> "$PRODUCT_CONFIG_FILE" || return 1
+        } || cp -f "$source_config" "$PRODUCT_CONFIG_FILE" || return 1
+        resolve_installed_config_paths "$config_file" || return 1
+        bash -n "$config_file" || return 1
+        return 0
+    fi
+
+    [ -n "$PRODUCT_CFGS_CONFIG_DIR" ] || return 0
+    [ -n "$default_config" ] || default_config=$(find "$PRODUCT_CFGS_CONFIG_DIR" -maxdepth 1 -type f -printf '%f\n' | head -n1)
+    [ -n "$default_config" ] || return 0
+    source_config="$PRODUCT_CFGS_CONFIG_DIR/$default_config"
+    [ -f "$source_config" ] || return 0
+    cp -f "$source_config" "$PRODUCT_CONFIG_FILE"
+}
+
 ensure_lists() {
     local ipset_dir="$PRODUCT_DIR/ipset"
     mkdir -p "$ipset_dir"
@@ -84,8 +136,19 @@ ensure_lists() {
     done
 }
 
+prepare_product_tmpdir() {
+    [ "$PRODUCT_ID" = "zapret2" ] || return 0
+    local tmpdir="${TMPDIR:-${PRODUCT_TMPDIR:-}}"
+    [ -n "$tmpdir" ] || return 0
+    mkdir -p -- "$tmpdir" || return 1
+    if id -u "${WS_USER:-zapret2}" >/dev/null 2>&1; then
+        chown "${WS_USER:-zapret2}:" "$tmpdir" 2>/dev/null || true
+        chmod 700 "$tmpdir" 2>/dev/null || true
+    fi
+}
+
 ensure_scripts_executable() {
-    find "$PRODUCT_DIR" -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
+    find "$PRODUCT_DIR" -name "*.sh" -exec chmod +x {} \\; 2>/dev/null || true
     [ -d "$PRODUCT_DIR/init.d" ] && chmod -R +x "$PRODUCT_DIR/init.d/" 2>/dev/null || true
     [ -d "$PRODUCT_DIR/ipset" ] && chmod -R 755 "$PRODUCT_DIR/ipset/" 2>/dev/null || true
     [ -d "$PRODUCT_DIR/files" ] && chmod -R 755 "$PRODUCT_DIR/files/" 2>/dev/null || true
@@ -166,25 +229,34 @@ main_install() {
     }
 
     install_cfgs
-    [ -d "$PRODUCT_CFGS_DIR/configurations" ] && {
-        cp -f "$PRODUCT_CFGS_DIR/configurations/general" "$PRODUCT_CONFIG_FILE" 2>/dev/null || true
+    install_product_config || {
+        warn "Не удалось подготовить конфигурацию $PRODUCT_ID"
+        return 1
     }
-    [ -d "$PRODUCT_CFGS_DIR/bin" ] && {
+    if [ -n "${PRODUCT_CFGS_BIN_DIR:-}" ] && [ -d "$PRODUCT_CFGS_DIR/$PRODUCT_CFGS_BIN_DIR" ]; then
         mkdir -p "$PRODUCT_DIR/files/fake"
-        cp "$PRODUCT_CFGS_DIR/bin/"* "$PRODUCT_DIR/files/fake/" 2>/dev/null || true
-    }
+        cp "$PRODUCT_CFGS_DIR/$PRODUCT_CFGS_BIN_DIR/"* "$PRODUCT_DIR/files/fake/" 2>/dev/null || true
+    fi
 
     ensure_lists
     ensure_scripts_executable
+    prepare_product_tmpdir || {
+        warn "Не удалось подготовить TMPDIR для $PRODUCT_ID"
+        return 1
+    }
     ln -sf "/opt/zapret.installer/zapret-control.sh" "/bin/$PRODUCT_ID" 2>/dev/null || true
 
     systemd_install
-    systemctl restart "$PRODUCT_SERVICE" 2>/dev/null || true
+    manage_service restart 2>/dev/null || {
+        warn "$PRODUCT_ID установлен, но сервис не удалось запустить"
+        return 1
+    }
 
     if product_health "$PRODUCT_SERVICE"; then
         log "$PRODUCT_ID успешно установлен и работает!"
     else
         warn "$PRODUCT_ID установлен, но не активен (проверьте nft/ipset)"
+        return 1
     fi
 }
 
@@ -202,8 +274,24 @@ main_update() {
     fi
 
     install_cfgs
+    install_product_config || {
+        warn "Не удалось подготовить конфигурацию $PRODUCT_ID"
+        return 1
+    }
     ensure_scripts_executable
-    systemctl restart "$PRODUCT_SERVICE" 2>/dev/null || true
+    prepare_product_tmpdir || {
+        warn "Не удалось подготовить TMPDIR для $PRODUCT_ID"
+        return 1
+    }
+    manage_service restart 2>/dev/null || {
+        warn "$PRODUCT_ID обновлён, но сервис не удалось перезапустить"
+        return 1
+    }
 
-    log "$PRODUCT_ID обновлен!"
+    if product_health "$PRODUCT_SERVICE"; then
+        log "$PRODUCT_ID обновлён и работает!"
+    else
+        warn "$PRODUCT_ID обновлён, но не активен (проверьте nft/ipset)"
+        return 1
+    fi
 }

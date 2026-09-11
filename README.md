@@ -12,12 +12,12 @@
 
 ## Возможности
 
-* Автообнаружение продуктов — сканирование `products/*/product.env`
-* Проверка конфигов перед применением
-* Подстановка переменных при импорте: `%BIN%`, `%LISTS%`, `%LUA%`
-* Единое меню управления для всех установленных продуктов
-* Проверка здоровья системы: зависимости, бинарники, сервисы
-* Модульная архитектура без правок основного кода для добавления новых продуктов
+- Автообнаружение продуктов — сканирование `products/*/product.env`
+- Проверка конфигов перед применением
+- Подстановка переменных при импорте: `%BIN%`, `%LISTS%`, `%LUA%`
+- Единое меню управления для всех установленных продуктов
+- Проверка здоровья системы: зависимости, бинарники, сервисы
+- Модульная архитектура без правок основного кода для добавления новых продуктов
 
 ## Структура
 
@@ -54,17 +54,17 @@ zapret
 
 ## Поддерживаемые системы
 
-* Debian, Ubuntu, Mint
-* Fedora
-* Arch Linux, Artix Linux и производные
-* Alt Linux
-* Void Linux
-* Gentoo Linux
-* Redos Linux
-* Oracle Linux
-* OpenSUSE
-* Alpine Linux
-* OpenWrt
+- Debian, Ubuntu, Mint
+- Fedora
+- Arch Linux, Artix Linux и производные
+- Alt Linux
+- Void Linux
+- Gentoo Linux
+- Redos Linux
+- Oracle Linux
+- OpenSUSE
+- Alpine Linux
+- OpenWrt
 
 > [!IMPORTANT]
 > Системы инициализации `runit`, `OpenRC` и `SysVinit` поддерживаются только частично.
@@ -73,11 +73,11 @@ zapret
 
 Создайте директорию `products/myproduct/` и добавьте в неё:
 
-* `product.env` — переменные продукта (`PRODUCT_ID`, `PRODUCT_DIR`, `PRODUCT_SERVICE`, `PRODUCT_BIN_NAME`, ...)
-* `init.sh` — функции инициализации и проверки
-* `install.sh` — функции установки и обновления
-* `uninstall.sh` — функция удаления
-* `health.sh` — функции health-check и проверки обновлений
+- `product.env` — переменные продукта (`PRODUCT_ID`, `PRODUCT_DIR`, `PRODUCT_SERVICE`, `PRODUCT_BIN_NAME`, ...)
+- `init.sh` — функции инициализации и проверки
+- `install.sh` — функции установки и обновления
+- `uninstall.sh` — функция удаления
+- `health.sh` — функции health-check и проверки обновлений
 
 Продукт автоматически обнаружится при следующем запуске панели управления.
 

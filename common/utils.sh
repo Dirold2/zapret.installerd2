@@ -15,11 +15,6 @@ check_fs() {
     fi
 }
 
-redraw_screen() {
-    clear
-    draw_header
-}
-
 check_sudo() {
     gum_notify info "Проверка прав root/sudo..."
     if [[ $EUID -ne 0 ]] && ! sudo -v >/dev/null 2>&1; then
@@ -31,14 +26,6 @@ check_sudo() {
 
 exists() {
     which "$1" >/dev/null 2>/dev/null
-}
-
-existf() {
-    type "$1" >/dev/null 2>/dev/null
-}
-
-whichq() {
-    which $1 2>/dev/null
 }
 
 check_openwrt() {
@@ -60,32 +47,6 @@ check_tput() {
 is_network_error() {
     local log="$1"
     echo "$log" | grep -qiE "timed out|recv failure|unexpected disconnect|early EOF|RPC failed|curl.*recv"
-}
-
-try_again() {
-    local error_message="$1"
-    shift
-
-    local -a command=("$@")
-    local attempt=0
-    local max_attempts=3
-    local success=0
-
-    while (( attempt < max_attempts )); do
-        ((attempt++))
-
-        (( attempt > 1 )) && echo -e "\e[33mПопытка $attempt из $max_attempts...\e[0m"
-
-        output=$("${command[@]}" 2>&1) && success=1 && break
-
-        if ! is_network_error "$output"; then
-            echo "$output" >&2
-            error_exit "не удалось склонировать репозиторий."
-        fi
-        sleep 2
-    done
-
-    (( success == 0 )) && error_exit "$error_message"
 }
 
 open_editor() {
@@ -130,26 +91,6 @@ action_install_product() {
         )
     else
         gum_notify error "Ошибка: Скрипт установки для $p не найден!"
-        return 1
-    fi
-}
-
-action_update_product() {
-    local p="${1:-}"
-    [ -z "$p" ] && return 1
-
-    local script_path="${BASE_DIR}/products/$p/install.sh"
-    if [ -f "$script_path" ]; then
-        (
-            [ -f "${BASE_DIR}/common/utils.sh" ] && source "${BASE_DIR}/common/utils.sh"
-            [ -f "${BASE_DIR}/common/init_common.sh" ] && source "${BASE_DIR}/common/init_common.sh"
-
-            product_use "$p" || exit 1
-            source "$script_path"
-            main_update
-        )
-    else
-        gum_notify error "Ошибка: Скрипт обновления для $p не найден!"
         return 1
     fi
 }

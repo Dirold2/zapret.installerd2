@@ -30,7 +30,7 @@ update_installer() {
     case "$istat" in
         not_git)
             if gum_confirm "Клонировать установщик в $INSTALLER_DIR?"; then
-                gum_spin "Клонирование..." "rm -rf $INSTALLER_DIR && git clone $INSTALLER_REPO $INSTALLER_DIR"
+                gum_spin "Клонирование..." "git clone \"$INSTALLER_REPO\" \"$INSTALLER_DIR\""
             fi
             ;;
         noconnect)
@@ -40,7 +40,10 @@ update_installer() {
             gum_notify info "Установщик актуален"
             ;;
         *)
-            gum_spin "Обновление установщика..." "cd $INSTALLER_DIR && git pull --rebase || { cd / && rm -rf $INSTALLER_DIR && git clone $INSTALLER_REPO $INSTALLER_DIR; }"
+            if ! gum_spin "Обновление установщика..." "git -C \"$INSTALLER_DIR\" pull --rebase"; then
+                gum_notify error "Не удалось обновить установщик; текущая версия сохранена"
+                return 1
+            fi
             exec "$0" "$@"
             ;;
     esac
@@ -130,7 +133,10 @@ check_all_updates() {
     if $products_update && gum_confirm "Установить обновления?"; then
         if $has_installer_updates; then
             gum_notify info "Обновляю установщик..."
-            gum_spin "git pull..." "cd $INSTALLER_DIR && git pull --rebase || { cd / && rm -rf $INSTALLER_DIR && git clone $INSTALLER_REPO $INSTALLER_DIR; }"
+            if ! gum_spin "git pull..." "git -C \"$INSTALLER_DIR\" pull --rebase"; then
+                gum_notify error "Не удалось обновить установщик; текущая версия сохранена"
+                return 1
+            fi
         fi
         if $has_product_updates; then
             action_perform_updates

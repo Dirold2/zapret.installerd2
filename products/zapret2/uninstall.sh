@@ -9,12 +9,14 @@ local_uninstall() {
     fi
 
     echo "Остановка сервиса zapret2..."
-    systemctl stop zapret2.service >/dev/null 2>&1 || true
-    systemctl disable zapret2.service >/dev/null 2>&1 || true
+    manage_service stop >/dev/null 2>&1 || true
+    manage_autostart disable >/dev/null 2>&1 || true
 
-    echo "Остановка таймера обновления списков..."
-    systemctl stop zapret2-list-update.timer >/dev/null 2>&1 || true
-    systemctl disable zapret2-list-update.timer >/dev/null 2>&1 || true
+    if [ "${INIT_SYSTEM:-}" = "systemd" ]; then
+        echo "Остановка таймера обновления списков..."
+        systemctl stop zapret2-list-update.timer >/dev/null 2>&1 || true
+        systemctl disable zapret2-list-update.timer >/dev/null 2>&1 || true
+    fi
 
     echo "Остановка процесса nfqws2..."
     if [ -f /var/run/nfqws2_1.pid ]; then
@@ -38,9 +40,10 @@ local_uninstall() {
     sudo rm -f /etc/systemd/system/zapret2.service.d
     sudo rm -f /etc/systemd/system/zapret2-list-update.timer
 
-    echo "Перезапуск демона systemd..."
-    sudo systemctl daemon-reload >/dev/null 2>&1 || true
-    sudo systemctl reset-failed zapret2.service >/dev/null 2>&1 || true
+    if [ "${INIT_SYSTEM:-}" = "systemd" ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl reset-failed zapret2.service >/dev/null 2>&1 || true
+    fi
 
     gum_notify success "Продукт $p успешно удален"
 }

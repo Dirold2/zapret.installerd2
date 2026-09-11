@@ -37,6 +37,7 @@ source "$BASE_DIR/products/$PRODUCT_ID/uninstall.sh"
 
 # Load UI
 source "$BASE_DIR/common/flow_v2.sh"
+source "$BASE_DIR/products/zapret2/blockcheckw.sh"
 
 set -Eeuo pipefail
 
@@ -45,7 +46,11 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 check_sudo
-trap fast_exit SIGINT
+
+# Ctrl+C cancels the active child command (gum/read) and returns one menu level.
+# At the main menu its non-zero result ends the application. Ctrl+\\ exits immediately.
+trap ':' SIGINT
+trap fast_exit SIGQUIT
 
 check_openwrt
 check_tput && tput bold || true

@@ -261,24 +261,6 @@ gum_header() {
 # Разделители (Dividers)
 # ============================================================================
 
-gum_divider() {
-    local text="${1:-}"
-
-    if $GUM_AVAILABLE; then
-        if [ -n "$text" ]; then
-            gum rule --color "#607D8B" --title "$text"
-        else
-            gum rule --color "#607D8B"
-        fi
-    else
-        if [ -n "$text" ]; then
-            echo -e "${COLOR_CYAN}───────────── $text ─────────────${COLOR_RESET}"
-        else
-            echo -e "${COLOR_CYAN}─────────────────────────────────${COLOR_RESET}"
-        fi
-    fi
-}
-
 # ============================================================================
 # Подтверждения (Confirm)
 # ============================================================================
@@ -347,45 +329,6 @@ gum_choose_one() {
 # Множественный выбор (Multi Select)
 # ============================================================================
 
-gum_choose_many() {
-    local title="$1"
-    shift
-    local options=("$@")
-
-    if $GUM_AVAILABLE; then
-        gum choose \
-            --header "$title" \
-            --header.foreground="#2196F3" \
-            --selected.foreground="#4CAF50" \
-            --selected.background="#1B5E20" \
-            --cursor.foreground="#E91E63" \
-            --no-limit \
-            "${options[@]}"
-    else
-        echo -e "${COLOR_BOLD}${COLOR_CYAN}$title${COLOR_RESET}"
-        echo "(введите номера через пробел, например: 1 3 5)"
-        local i=0
-        for opt in "${options[@]}"; do
-            i=$((i+1))
-            echo -e "  ${COLOR_BOLD}${COLOR_BLUE}$i)${COLOR_RESET} $opt"
-        done
-        echo ""
-        echo -n "Введите номера: "
-        read -r selections
-        local result=()
-        for sel in $selections; do
-            i=0
-            for opt in "${options[@]}"; do
-                i=$((i+1))
-                if [ "$i" = "$sel" ]; then
-                    result+=("$opt")
-                fi
-            done
-        done
-        printf '%s\n' "${result[@]}"
-    fi
-}
-
 # ============================================================================
 # Ввод текста (Text Input)
 # ============================================================================
@@ -416,66 +359,13 @@ gum_input() {
 # Ввод пароля (Password Input)
 # ============================================================================
 
-gum_password() {
-    local prompt="$1"
-
-    if $GUM_AVAILABLE; then
-        gum input \
-            --prompt "$prompt" \
-            --password \
-            --prompt.foreground="#2196F3"
-    else
-        echo -n "$prompt "
-        read -rs password
-        echo ""
-        echo "$password"
-    fi
-}
-
 # ============================================================================
 # Ввод нескольких строк (Multi-line Input)
 # ============================================================================
 
-gum_write() {
-    local title="$1"
-    local placeholder="${2:-}"
-
-    if $GUM_AVAILABLE; then
-        gum write \
-            --title "$title" \
-            --placeholder "$placeholder" \
-            --width 60 \
-            --height 10
-    else
-        echo -e "${COLOR_BOLD}${COLOR_CYAN}$title${COLOR_RESET}"
-        echo "(введите текст, пустая строка для завершения)"
-        local lines=()
-        while true; do
-            read -r line
-            [ -z "$line" ] && break
-            lines+=("$line")
-        done
-        printf '%s\n' "${lines[@]}"
-    fi
-}
-
 # ============================================================================
 # Прогресс бар (Progress Bar)
 # ============================================================================
-
-gum_progress() {
-    local title="${1:-Загрузка...}"
-    local total="${2:-100}"
-
-    if $GUM_AVAILABLE; then
-        local progress_bar
-        progress_bar=$(gum spin --spinner dot --title "$title" -- sleep 0.1)
-        # Для реального прогресса нужно использовать в цикле
-        echo "$progress_bar"
-    else
-        echo -e "${COLOR_CYAN}$title${COLOR_RESET}"
-    fi
-}
 
 gum_spin() {
     local title="${1:-Загрузка...}"
@@ -504,29 +394,9 @@ gum_spin() {
 # Таблицы (Table)
 # ============================================================================
 
-gum_table() {
-    local data="$1"
-
-    if $GUM_AVAILABLE; then
-        echo "$data" | gum table
-    else
-        echo "$data"
-    fi
-}
-
 # ============================================================================
 # Форматированный вывод (Format)
 # ============================================================================
-
-gum_format() {
-    local content="$1"
-
-    if $GUM_AVAILABLE; then
-        echo "$content" | gum format
-    else
-        echo "$content"
-    fi
-}
 
 # ============================================================================
 # Пауза (Pause)
@@ -548,89 +418,13 @@ gum_pause() {
 # Список с деталями (List with details)
 # ============================================================================
 
-gum_list_detail() {
-    local title="$1"
-    shift
-
-    if $GUM_AVAILABLE; then
-        # Формат: "label\tdescription"
-        gum choose --header "$title" "$@"
-    else
-        echo -e "${COLOR_BOLD}${COLOR_CYAN}$title${COLOR_RESET}"
-        for item in "$@"; do
-            local label="${item%%       *}"
-            local desc="${item#*        }"
-            echo -e "  ${COLOR_BOLD}${COLOR_BLUE}•${COLOR_RESET} ${COLOR_BOLD}$label${COLOR_RESET}"
-            [ "$label" != "$desc" ] && echo -e "    ${COLOR_CYAN}$desc${COLOR_RESET}"
-        done
-        echo ""
-    fi
-}
-
 # ============================================================================
 # Статус блок (Status Block)
 # ============================================================================
 
-gum_status_block() {
-    local title="$1"
-    local status="$2"
-    local color="${3:-blue}"
-
-    local color_code="$COLOR_BLUE"
-    case "$color" in
-        green) color_code="$COLOR_GREEN" ;;
-        red) color_code="$COLOR_RED" ;;
-        yellow) color_code="$COLOR_YELLOW" ;;
-        magenta) color_code="$COLOR_MAGENTA" ;;
-    esac
-
-    if $GUM_AVAILABLE; then
-        gum style \
-            --border rounded \
-            --border-foreground "$color_code" \
-            --padding "0 2" \
-            "$title: ${color_code}${status}${COLOR_RESET}"
-    else
-        echo -e "${COLOR_BOLD}$title:${COLOR_RESET} ${color_code}${status}${COLOR_RESET}"
-    fi
-}
-
 # ============================================================================
 # Информационная панель (Info Panel)
 # ============================================================================
-
-gum_panel() {
-    local title="$1"
-    local content="$2"
-    local style="${3:-info}"
-
-    local border_color="#607D8B"
-    case "$style" in
-        error) border_color="#F44336" ;;
-        success) border_color="#4CAF50" ;;
-        warning) border_color="#FFC107" ;;
-        info) border_color="#2196F3" ;;
-    esac
-
-    if $GUM_AVAILABLE; then
-        gum style \
-            --border rounded \
-            --border-foreground "$border_color" \
-            --padding "1 3" \
-            --margin "1 2" \
-            "$content"
-    else
-        echo ""
-        echo -e "${COLOR_CYAN}┌────────────────────────────────────────┐${COLOR_RESET}"
-        echo -e "${COLOR_CYAN}│${COLOR_RESET} ${title}"
-        echo -e "${COLOR_CYAN}├────────────────────────────────────────┤${COLOR_RESET}"
-        echo "$content" | while IFS= read -r line; do
-            echo -e "${COLOR_CYAN}│${COLOR_RESET} $line"
-        done
-        echo -e "${COLOR_CYAN}└────────────────────────────────────────┘${COLOR_RESET}"
-        echo ""
-    fi
-}
 
 # ============================================================================
 # Проверка размера терминала
@@ -648,14 +442,6 @@ gum_term_check() {
         return 0
     fi
     if [ "$lines" -gt 0 ] && [ "$lines" -lt "$min_lines" ]; then
-        return 0
-    fi
-    return 1
-}
-
-gum_term_warn() {
-    if gum_term_check; then
-        gum_notify warn "Терминал слишком мал. Рекомендуется увеличить окно."
         return 0
     fi
     return 1

@@ -14,10 +14,6 @@ state_now_ts() {
     date +"%Y%m%d-%H%M%S"
 }
 
-state_log_path() {
-    echo "$LOG_DIR/install-$(date +%Y%m%d).log"
-}
-
 state_load() {
     INSTALL_MODE=""
     ACTIVE_PRODUCT=""
@@ -29,18 +25,6 @@ state_load() {
     [ -n "$INSTALL_MODE" ] || INSTALL_MODE="zapret"
     [ -n "$ACTIVE_PRODUCT" ] || ACTIVE_PRODUCT="$INSTALL_MODE"
     return 0
-}
-
-state_save() {
-    state_mkdirs || return 1
-    local tmp
-    tmp="$(mktemp -t zapret-state.XXXXXXXX)" || return 1
-    {
-        echo "INSTALL_MODE=${INSTALL_MODE}"
-        echo "ACTIVE_PRODUCT=${ACTIVE_PRODUCT}"
-        echo "ACTIVE_PROFILE=${ACTIVE_PROFILE}"
-    } >"$tmp" || { rm -f "$tmp"; return 1; }
-    mv -f "$tmp" "$STATE_FILE" || { rm -f "$tmp"; return 1; }
 }
 
 backup_begin() {
@@ -60,9 +44,5 @@ backup_path() {
     else
         cp -a "$p" "$dst" || return 1
     fi
-}
-
-backup_done_msg() {
-    [ -n "$BACKUP_DIR" ] && echo "Backup: $BACKUP_DIR"
 }
 
