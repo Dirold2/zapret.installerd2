@@ -64,8 +64,12 @@ action_perform_updates() {
             *)
                 gum_notify info "Обновляю $p: $status..."
                 product_use "$p" || continue
-                main_update 2>&1 | gum_spin "Обновление $p..."
-                updated=true
+                if main_update; then
+                    updated=true
+                else
+                    gum_notify error "Не удалось обновить $p; проверьте сообщения восстановления"
+                    return 1
+                fi
                 ;;
         esac
     done
@@ -76,7 +80,7 @@ action_perform_updates() {
         ux_msg "Нечего обновлять"
     fi
 
-    manage_service restart 2>/dev/null || true
+    # Each product update preserves its own running/stopped state.
 }
 
 update_configs() {

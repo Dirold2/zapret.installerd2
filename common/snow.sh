@@ -74,6 +74,60 @@ resolve_config_vars() {
     rm -f "$tmp"
 }
 
+# Prepare and validate before touching the live file. Keep rollback local to
+# this transaction: UI callbacks must not be able to change its backup path.
+apply_product_config() (
+    local src="$1" restart="${2:-false}" preset="${3:-false}"
+    local staged rollback="" had_config=false
+    [ -f "$src" ] || return 1
+    if [ -L "$PRODUCT_CONFIG_FILE" ]; then
+        gum_notify error "Конфиг является symlink; автоматическая замена отменена"
+        return 1
+    fi
+    staged=$(mktemp "${PRODUCT_CONFIG_FILE}.new.XXXXXX") || return 1
+    trap 'rm -f -- "$staged"' EXIT
+    if [ -f "$PRODUCT_CONFIG_FILE" ]; then
+        had_config=true
+        cp -p -- "$PRODUCT_CONFIG_FILE" "$staged" || return 1
+    fi
+    if [ "$preset" = true ] && [ "$PRODUCT_ID" = zapret2 ]; then
+        [ -f "$PRODUCT_DIR/config.default" ] || {
+            gum_notify error "config.default не найден; preset не применён"
+            return 1
+        }
+        cat "$PRODUCT_DIR/config.default" > "$staged" || return 1
+        printf '\n# Installer configuration: %s\n' "$(basename "$src")" >> "$staged" || return 1
+        cat "$src" >> "$staged" || return 1
+    else
+        cat "$src" > "$staged" || return 1
+    fi
+    resolve_config_vars "$staged" && validate_config "$staged" || return 1
+    backup_begin && backup_path "$PRODUCT_CONFIG_FILE" || {
+        gum_notify error "Backup не создан; конфиг не изменён"
+        return 1
+    }
+    rollback="$BACKUP_DIR$PRODUCT_CONFIG_FILE"
+    mv -f -- "$staged" "$PRODUCT_CONFIG_FILE" || return 1
+    if [ "$restart" = true ]; then
+        if ! action_restart || ! product_health "$PRODUCT_SERVICE"; then
+            gum_notify error "Проверка после перезапуска не прошла; восстанавливаю конфиг"
+            if $had_config; then
+                if ! cp -p -- "$rollback" "$staged" || ! mv -f -- "$staged" "$PRODUCT_CONFIG_FILE"; then
+                    gum_notify error "Откат не удался. Backup: $rollback"
+                    return 1
+                fi
+            else
+                rm -f -- "$PRODUCT_CONFIG_FILE" || return 1
+            fi
+            if ! action_restart || ! product_health "$PRODUCT_SERVICE"; then
+                gum_notify error "Конфиг восстановлен, но сервис не работает. Backup: $rollback"
+            fi
+            return 1
+        fi
+    fi
+    gum_notify info "Конфиг установлен. Backup: $BACKUP_DIR"
+)
+
 preview_text_file() {
     local file="$1"
 
@@ -165,36 +219,9 @@ action_install_cfgs_config() {
         return 1
     fi
 
-    if [ "$PRODUCT_ID" != "zapret2" ]; then
-        resolve_config_vars "$imported"
-        validate_config "$imported" || {
-            if ! gum_confirm "Конфиг содержит ошибки. Всё равно установить?"; then
-                return 1
-            fi
-        }
-    fi
-
-    backup_begin || true
-    backup_path "$PRODUCT_CONFIG_FILE" || true
-
-    if [ "$PRODUCT_ID" = "zapret2" ] && [ -f "$PRODUCT_DIR/config.default" ]; then
-        cp -f "$PRODUCT_DIR/config.default" "$PRODUCT_CONFIG_FILE" || return 1
-        printf '\n# Installer configuration: %s\n' "$(basename "$imported")" >> "$PRODUCT_CONFIG_FILE"
-        cat "$imported" >> "$PRODUCT_CONFIG_FILE" || return 1
-        resolve_config_vars "$PRODUCT_CONFIG_FILE" || return 1
-        validate_config "$PRODUCT_CONFIG_FILE" || return 1
-        gum_notify info "Config zapret2 установлен"
-    else
-        cp -f -- "$imported" "$PRODUCT_CONFIG_FILE" || {
-            gum_notify error "Ошибка копирования: Config"
-            return 1
-        }
-        gum_notify info "Config установлен"
-    fi
-
-    if gum_confirm "Перезапустить $PRODUCT_ID ?"; then
-        action_restart
-    fi
+    local restart=false
+    gum_confirm "Перезапустить $PRODUCT_ID после установки?" && restart=true
+    apply_product_config "$imported" "$restart" true || return 1
 
     gum_pause
 }

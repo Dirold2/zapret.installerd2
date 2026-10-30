@@ -50,25 +50,9 @@ action_import_config() {
         return 1
     fi
 
-    resolve_config_vars "$imported"
-
-    validate_config "$imported" || {
-        if ! gum_confirm "Конфиг содержит ошибки. Всё равно импортировать?"; then
-            return 1
-        fi
-    }
-
-    backup_begin || true
-    backup_path "$PRODUCT_CONFIG_FILE" || true
-
-    cp -f -- "$imported" "$PRODUCT_CONFIG_FILE" \
-        || { gum_notify error "Ошибка копирования конфига"; return 1; }
-
-    gum_notify info "Конфиг импортирован"
-
-    if gum_confirm "Перезапустить $PRODUCT_ID ?"; then
-        action_restart
-    fi
+    local restart=false
+    gum_confirm "Перезапустить $PRODUCT_ID после импорта?" && restart=true
+    apply_product_config "$imported" "$restart" || return 1
 
     gum_pause
 }

@@ -149,6 +149,55 @@ action_bench_blockcheckw() {
     pause
 }
 
+# Build a candidate only; apply_product_config owns validation and rollback.
+_bcw_prepare_config() {
+    python3 - "$PRODUCT_CONFIG_FILE" "$1" "$2" "$3" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+source, output, domain, strategy = sys.argv[1:]
+if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", domain):
+    raise SystemExit("Некорректный домен")
+if not strategy.startswith("--") or any(c in strategy for c in '\n\r"`$\\'):
+    raise SystemExit("Стратегия не может быть безопасно записана в shell-конфиг")
+# Report strategies must not create extra profiles or replace profile selectors.
+if re.search(r"(?:^|\s)--(?:new|name|filter-[^=\s]+|hostlist[^=\s]*|ipset[^=\s]*)(?:=|\s|$)", strategy):
+    raise SystemExit("Стратегия содержит управляющие параметры профиля")
+config = Path(source).read_text()
+blocks = list(re.finditer(r'^NFQWS2_OPT="(.*?)^"[ \t]*$', config, re.M | re.S))
+if len(blocks) != 1:
+    raise SystemExit("Ожидается один многострочный NFQWS2_OPT")
+match = blocks[0]
+body = match.group(1)
+marker = "# blockcheckw auto: " + domain
+# Remove only our own previously generated profile, including the legacy form.
+managed = re.compile(r"(?m)^" + re.escape(marker) + r"\n(?:(?!^# blockcheckw auto:|^\").)*?--new[ \t]*\n(?:[ \t]*\n)*", re.S)
+body = managed.sub("", body)
+# Keep global declarations (e.g. --blob) before the first profile. Inserting
+# ahead of that profile gives the exact-domain rule precedence over broad lists.
+first = re.search(r"(?m)^[ \t]*(?:--name=|--filter-)", body)
+if not first and body.strip():
+    raise SystemExit("Не удалось безопасно определить начало профилей")
+position = first.start() if first else len(body)
+profile = (
+    marker + "\n--name=blockcheckw_" + domain + " "
+    "--filter-tcp=80,443 --hostlist-domains=" + domain + " " + strategy + " --new\n\n"
+)
+body = body[:position] + profile + body[position:]
+updated = config[:match.start(1)] + body + config[match.end(1):]
+Path(output).write_text(updated)
+PY
+}
+
+_bcw_apply_strategy() (
+    local domain="$1" strategy="$2" candidate
+    candidate=$(mktemp "${PRODUCT_CONFIG_FILE}.bcw.XXXXXX") || return 1
+    trap 'rm -f -- "$candidate"' EXIT
+    _bcw_prepare_config "$candidate" "$domain" "$strategy" || return 1
+    apply_product_config "$candidate" true
+)
+
 action_auto_strategy() {
     [ "$PRODUCT_ID" = "zapret2" ] || {
         gum_notify error "Автоподбор доступен только для zapret2"
@@ -262,62 +311,14 @@ PY
 
     print_header "Найдена рабочая стратегия" "info"
     printf '%s\n' "$strategy"
-    gum_confirm "Добавить её в конфиг для $domain?" || return 0
-
-    backup_begin || { gum_notify error "Не удалось создать backup"; return 1; }
-    backup_path "$PRODUCT_CONFIG_FILE" || {
-        gum_notify error "Не удалось сохранить backup конфига"
+    gum style --foreground 3 "Будет создан или обновлён приоритетный TCP-профиль для этого домена."
+    gum style --foreground 240 "Общие профили и стратегии остальных доменов останутся без изменений."
+    gum_confirm "Применить стратегию для $domain и перезапустить сервис?" || return 0
+    _bcw_apply_strategy "$domain" "$strategy" || {
+        gum_notify error "Не удалось применить стратегию для $domain"
         return 1
     }
-
-    if ! python3 - "$PRODUCT_CONFIG_FILE" "$domain" "$strategy" <<'PY'
-import re, sys
-from pathlib import Path
-config_path, domain, strategy = sys.argv[1:]
-path = Path(config_path)
-config = path.read_text()
-if not re.search(r'^NFQWS2_OPT="', config, re.M):
-    raise SystemExit("NFQWS2_OPT не найден")
-for hostlist in re.findall(r"--hostlist-domains=([^\s\\]+)", config):
-    if domain in hostlist.split(","):
-        raise SystemExit("Домен уже входит в существующий профиль NFQWS2_OPT; автодобавление отменено")
-block = (
-    "\n# blockcheckw auto: " + domain + "\n"
-    "--filter-tcp=80,443 --hostlist-domains=" + domain + " " + strategy + " --new\n"
-)
-updated, count = re.subn(
-    r'(NFQWS2_OPT=".*?)(\n")',
-    lambda match: match.group(1) + block + match.group(2),
-    config, count=1, flags=re.S
-)
-if count != 1:
-    raise SystemExit("NFQWS2_OPT имеет неподдерживаемый формат")
-path.write_text(updated)
-PY
-    then
-        gum_notify error "Не удалось добавить стратегию; выполняю откат"
-        cp -f "$BACKUP_DIR$PRODUCT_CONFIG_FILE" "$PRODUCT_CONFIG_FILE" 2>/dev/null || true
-        return 1
-    fi
-    if ! resolve_config_vars "$PRODUCT_CONFIG_FILE" || ! validate_config "$PRODUCT_CONFIG_FILE"; then
-        gum_notify error "Новый конфиг не прошёл проверку; выполняю откат"
-        cp -f "$BACKUP_DIR$PRODUCT_CONFIG_FILE" "$PRODUCT_CONFIG_FILE" 2>/dev/null || true
-        return 1
-    fi
-
-    action_restart || {
-        gum_notify error "Сервис не запустился; выполняю откат"
-        cp -f "$BACKUP_DIR$PRODUCT_CONFIG_FILE" "$PRODUCT_CONFIG_FILE" 2>/dev/null || true
-        action_restart >/dev/null 2>&1 || true
-        return 1
-    }
-    if ! pgrep -x nfqws2 >/dev/null 2>&1; then
-        gum_notify error "Сервис перезапущен, но nfqws2 не найден; выполняю откат"
-        cp -f "$BACKUP_DIR$PRODUCT_CONFIG_FILE" "$PRODUCT_CONFIG_FILE" 2>/dev/null || true
-        action_restart >/dev/null 2>&1 || true
-        return 1
-    fi
-    gum_notify success "Стратегия для $domain добавлена и применена"
+    gum_notify success "Стратегия для $domain применена"
     pause
 }
 

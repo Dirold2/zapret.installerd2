@@ -263,35 +263,75 @@ main_install() {
 # =========================
 # UPDATE
 # =========================
-main_update() {
-    local ver_file_content
-    ver_file_content=$(cat "$PRODUCT_VER_FILE" 2>/dev/null || echo "")
+main_update() (
+    # Stage beside the installation so directory renames stay on one filesystem.
+    local live_dir="$PRODUCT_DIR" workspace staged old_dir was_running=false
+    local ver_file_content tag_version
+    workspace=$(mktemp -d "${live_dir}.update.XXXXXX") || return 1
+    staged="$workspace/new"
+    old_dir="$workspace/previous"
+    trap 'if [ -d "$old_dir" ]; then warn "Предыдущая установка сохранена: $old_dir"; else rm -rf -- "$workspace"; fi' EXIT
+    ver_file_content=$(cat "$PRODUCT_VER_FILE" 2>/dev/null || true)
+    service_is_active "$PRODUCT_SERVICE" && was_running=true
 
-    if [ "$ver_file_content" = "git" ]; then
-        cd "$PRODUCT_DIR" && git pull origin master || install_release
-    else
-        install_release || install_git
+    # Download helpers may replace PRODUCT_DIR and write PRODUCT_VER_FILE.
+    # Keep both writes inside staging until the new binary is built.
+    if ! (
+        PRODUCT_DIR="$staged"
+        PRODUCT_VER_FILE="$workspace/version"
+        if [ "$ver_file_content" = "git" ]; then
+            install_git || exit 1
+        else
+            install_release || exit 1
+        fi
+        cd "$staged" || exit 1
+        make -j"$(nproc)" || exit 1
+        find "$staged" -type f -name "$PRODUCT_BIN_NAME" -executable | grep -q .
+    ); then
+        warn "Подготовка обновления не удалась; текущая установка сохранена"
+        return 1
     fi
 
-    install_cfgs
-    install_product_config || {
-        warn "Не удалось подготовить конфигурацию $PRODUCT_ID"
-        return 1
+    # Preserve user-managed data, not old executables or init scripts.
+    local path
+    for path in config ipset files/fake blockcheckw zapret.cfgs; do
+        if [ -e "$live_dir/$path" ]; then
+            if [ -d "$live_dir/$path" ]; then
+                mkdir -p "$staged/$path" || return 1
+                cp -a "$live_dir/$path/." "$staged/$path/" || return 1
+            else
+                cp -a "$live_dir/$path" "$staged/$path" || return 1
+            fi
+        fi
+    done
+    if [ "$PRODUCT_ID" = "zapret2" ] && [ -f "$staged/config" ]; then
+        bash -n "$staged/config" || return 1
+    fi
+    tag_version=$(cat "$workspace/version") || return 1
+    $was_running && manage_service stop || {
+        if $was_running; then
+            warn "Не удалось остановить сервис; обновление отменено"
+            return 1
+        fi
     }
+    mv "$live_dir" "$old_dir" || return 1
+    if ! mv "$staged" "$live_dir"; then
+        mv "$old_dir" "$live_dir" || return 1
+        $was_running && manage_service start
+        return 1
+    fi
     ensure_scripts_executable
-    prepare_product_tmpdir || {
-        warn "Не удалось подготовить TMPDIR для $PRODUCT_ID"
-        return 1
-    }
-    manage_service restart 2>/dev/null || {
-        warn "$PRODUCT_ID обновлён, но сервис не удалось перезапустить"
-        return 1
-    }
-
-    if product_health "$PRODUCT_SERVICE"; then
-        log "$PRODUCT_ID обновлён и работает!"
-    else
-        warn "$PRODUCT_ID обновлён, но не активен (проверьте nft/ipset)"
+    if $was_running && { ! manage_service start || ! product_health "$PRODUCT_SERVICE"; }; then
+        warn "Новая версия не запустилась; восстанавливаю предыдущую"
+        manage_service stop >/dev/null 2>&1 || true
+        mv "$live_dir" "$workspace/failed" || return 1
+        mv "$old_dir" "$live_dir" || return 1
+        if ! manage_service start; then
+            warn "Предыдущая версия восстановлена, но сервис не запущен"
+        fi
         return 1
     fi
-}
+    printf '%s\n' "$tag_version" > "$PRODUCT_VER_FILE" || return 1
+    rm -rf -- "$old_dir"
+    log "$PRODUCT_ID обновлён; пользовательские настройки сохранены"
+)

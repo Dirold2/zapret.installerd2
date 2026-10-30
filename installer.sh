@@ -63,15 +63,16 @@ clone_or_update() {
     if [ -d "$INSTALL_DIR/.git" ]; then
         echo "[INFO] update repo"
         cd "$INSTALL_DIR"
-        $SUDO git pull --rebase || {
-            echo "[WARN] reset repo"
-            cd /
-            $SUDO rm -rf "$INSTALL_DIR"
-            $SUDO git clone "$REPO_URL" "$INSTALL_DIR"
+        $SUDO git pull --ff-only || {
+            echo "[ERROR] Не удалось обновить репозиторий; установленная копия сохранена"
+            return 1
         }
     else
         echo "[INFO] clone repo"
-        $SUDO rm -rf "$INSTALL_DIR"
+        if [ -e "$INSTALL_DIR" ]; then
+            echo "[ERROR] $INSTALL_DIR уже существует и не является git-репозиторием; каталог сохранён"
+            return 1
+        fi
         $SUDO git clone "$REPO_URL" "$INSTALL_DIR"
     fi
 }
