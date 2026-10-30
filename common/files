@@ -29,6 +29,28 @@ DL_02_URL="https://raw.githubusercontent.com/Flowseal/zapret-discord-youtube/mai
 DL_02_TARGET="fake"
 DL_02_FILES=(
     "ACTIVE_DISCORD_UDP.bin"
+    "ACTIVE_GAME_UDP.bin"
+    "quic_initial_4pda_to.bin"
+    "quic_initial_5ka_ru.bin"
+    "quic_initial_lemana_pro.bin"
+    "quic_initial_rutube_ru.bin"
+    "quic_initial_steam_chat_com.bin"
+    "quic_initial_steamcommunity_com.bin"
+    "quic_initial_steamstatic_com.bin"
+    "quic_initial_tencent_com.bin"
+    "quic_initial_www_google_com.bin"
+    "stun.bin"
+    "stun2.bin"
+    "tls_clienthello_4pda_to.bin"
+    "tls_clienthello_5ka_ru.bin"
+    "tls_clienthello_awswaf_com.bin"
+    "tls_clienthello_max_ru.bin"
+    "tls_clienthello_sochi_park.bin"
+    "tls_clienthello_steam_chat_com.bin"
+    "tls_clienthello_steamstatic_com.bin"
+    "tls_clienthello_teamspeak_com.bin"
+    "tls_clienthello_www_google_com.bin"
+    "tls_clienthello_www_sferum_ru.bin"
 )
 DL_GROUPS+=(02)
 
