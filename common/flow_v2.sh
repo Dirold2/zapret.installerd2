@@ -318,8 +318,8 @@ EOF
 action_start()   { manage_service start; }
 action_stop()    { manage_service stop; }
 action_restart() { manage_service restart; }
-action_enable()  { manage_autostart enable >/dev/null 2>&1 || true; }
-action_disable() { manage_autostart disable >/dev/null 2>&1 || true; }
+action_enable()  { manage_autostart enable; }
+action_disable() { manage_autostart disable; }
 
 action_install_mode_choose() {
     local opts=()
@@ -401,12 +401,47 @@ menu_manage_product() {
     done
 }
 
+check_site_connection() {
+    local name="$1" url="$2" result code rc
+    if result=$(curl --noproxy '*' --silent --show-error --location --max-redirs 5 \
+        --connect-timeout 5 --max-time 12 --output /dev/null \
+        --write-out '%{http_code}' "$url" 2>&1); then
+        rc=0
+    else
+        rc=$?
+    fi
+    if [ "$rc" -ne 0 ]; then
+        printf '[ОШИБКА] %s: curl %s (%s)\n' "$name" "$rc" "$result"
+        return 1
+    fi
+    code="$result"
+    case "$code" in
+        2??|3??) printf '[OK] %s: HTTP %s\n' "$name" "$code" ;;
+        *) printf '[ОТВЕТ] %s: HTTP %s (соединение установлено, сайт вернул ошибку)\n' "$name" "$code"; return 1 ;;
+    esac
+}
+
+action_check_sites() {
+    print_header "Проверка доступности" "normal"
+    if ! command -v curl >/dev/null 2>&1; then
+        gum_notify error "Для проверки требуется curl"
+        gum_pause
+        return 1
+    fi
+    printf 'Прямые HTTPS-запросы без прокси; проверяется сетевое соединение и HTTP-ответ.\n\n'
+    check_site_connection "Discord" "https://discord.com/api/v10/gateway" || :
+    check_site_connection "Discord Gateway (HTTPS)" "https://gateway.discord.gg/" || :
+    check_site_connection "YouTube" "https://www.youtube.com/" || :
+    printf '\nGateway может вернуть ошибку HTTP: это не проверка WebSocket. Воспроизведение видео и голос здесь не проверяются.\n'
+    gum_pause
+}
+
 menu_diagnostics() {
     while true; do
         clear
         print_header "Диагностика: $PRODUCT_ID" "normal"
 
-        local opts=("Проверка стратегий (blockcheck)")
+        local opts=("Проверить доступность сайтов" "Проверка стратегий (blockcheck)")
         [ "$PRODUCT_ID" = "zapret2" ] && opts+=("blockcheckw")
         opts+=("Назад")
 
@@ -414,6 +449,7 @@ menu_diagnostics() {
         act="$(ui_choose_one "Инструмент" "${opts[@]}")" || return 0
 
         case "$act" in
+            "Проверить доступность сайтов") action_check_sites ;;
             "Проверка стратегий (blockcheck)") action_run_blockcheck ;;
             "blockcheckw") menu_blockcheckw ;;
             "Назад") return 0 ;;
@@ -429,11 +465,12 @@ menu_blockcheckw() {
         local act
         if [ -x "$PRODUCT_DIR/blockcheckw/blockcheckw" ]; then
             act="$(ui_choose_one "Действие" \
-                "Запустить проверку" \
-                "Автоподбор для домена" \
-                "Проверить отчёт" \
-                "Отчёты" \
-                "Benchmark" \
+                "Подобрать стратегию для домена" \
+                "Проверить домен или список" \
+                "Проверить сохранённый отчёт" \
+                "Посмотреть отчёты" \
+                "Задать число воркеров (сейчас $(_bcw_workers))" \
+                "Подобрать число воркеров (benchmark)" \
                 "Удалить blockcheckw" \
                 "Назад")" || return 0
         else
@@ -444,11 +481,12 @@ menu_blockcheckw() {
 
         case "$act" in
             "Установить blockcheckw") action_install_blockcheckw ;;
-            "Запустить проверку") action_run_blockcheckw ;;
-            "Автоподбор для домена") action_auto_strategy ;;
-            "Проверить отчёт") action_check_bcw_report ;;
-            "Отчёты") action_view_bcw_results ;;
-            "Benchmark") action_bench_blockcheckw ;;
+            "Проверить домен или список") action_run_blockcheckw ;;
+            "Подобрать стратегию для домена") action_auto_strategy ;;
+            "Проверить сохранённый отчёт") action_check_bcw_report ;;
+            "Посмотреть отчёты") action_view_bcw_results ;;
+            "Задать число воркеров (сейчас $(_bcw_workers))") action_set_bcw_workers ;;
+            "Подобрать число воркеров (benchmark)") action_bench_blockcheckw ;;
             "Удалить blockcheckw") action_uninstall_blockcheckw ;;
             "Назад") return 0 ;;
         esac

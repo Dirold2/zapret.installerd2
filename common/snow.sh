@@ -58,7 +58,7 @@ resolve_config_vars() {
         sed -i \
             -e "s|%LISTS%|$PRODUCT_PATH_LISTS|g" \
             -e "s|@[Ll][Ii][Ss][Tt][Ss]|$PRODUCT_PATH_LISTS|g" \
-            -e "s|lists/|$PRODUCT_PATH_LISTS/|g" \
+            -e "s#\\(^\\|[=:@[:space:]]\\)lists/#\\1$PRODUCT_PATH_LISTS/#g" \
             "$tmp"
     fi
 
@@ -66,7 +66,7 @@ resolve_config_vars() {
         sed -i \
             -e "s|%LUA%|$PRODUCT_PATH_LUA|g" \
             -e "s|@[Ll][Uu][Aa]|$PRODUCT_PATH_LUA|g" \
-            -e "s|lua/|$PRODUCT_PATH_LUA/|g" \
+            -e "s#\\(^\\|[=:@[:space:]]\\)lua/#\\1$PRODUCT_PATH_LUA/#g" \
             "$tmp"
     fi
 

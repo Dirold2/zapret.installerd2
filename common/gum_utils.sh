@@ -405,13 +405,8 @@ gum_spin() {
 gum_pause() {
     local message="${1:-Нажмите Enter для продолжения...}"
 
-    if $GUM_AVAILABLE; then
-        gum input --prompt "" --placeholder "$message" --width 50 >/dev/null || true
-    else
-        echo ""
-        echo -n "$message "
-        read -r _ || true
-    fi
+    printf '\n%s ' "$message"
+    read -r _ || true
 }
 
 # ============================================================================

@@ -21,7 +21,7 @@ action_install_blockcheckw() {
     esac
 
     local tag
-    tag=$(curl -fsSL "https://api.github.com/repos/rcd27/blockcheckw/releases/latest" 2>/dev/null |
+    tag=$(github_curl "https://api.github.com/repos/rcd27/blockcheckw/releases/latest" 2>/dev/null |
         grep '"tag_name"' | cut -d'"' -f4)
     [ -n "$tag" ] || { gum_notify error "Не удалось определить версию"; return 1; }
 
@@ -33,7 +33,7 @@ action_install_blockcheckw() {
     print_header "Установка blockcheckw" "normal"
     gum style "Версия:  $tag"
     gum style "Арх:     $arch"
-    if ! curl -fL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 120 "$url" -o "$tmp/$tarball"; then
+    if ! github_curl "$url" -o "$tmp/$tarball"; then
         rm -rf "$tmp"; gum_notify error "Не удалось скачать $tarball"; return 1
     fi
 
@@ -129,6 +129,21 @@ action_check_bcw_report() {
         pause
         return 1
     }
+    pause
+}
+
+action_set_bcw_workers() {
+    local current workers cfg="$PRODUCT_DIR/blockcheckw/config.env"
+    current="$(_bcw_workers)"
+    read -erp "Число воркеров (текущее $current): " workers || return 1
+    workers="${workers:-$current}"
+    [[ "$workers" =~ ^[1-9][0-9]*$ ]] || {
+        gum_notify error "Введите положительное число воркеров"
+        return 1
+    }
+    mkdir -p "$(dirname "$cfg")" || return 1
+    printf 'BCW_WORKERS=%s\n' "$workers" > "$cfg" || return 1
+    gum_notify info "Сохранено: BCW_WORKERS=$workers"
     pause
 }
 
@@ -332,19 +347,23 @@ action_run_blockcheckw() {
     local saved_workers
     saved_workers="$(_bcw_workers)"
     local domain_list subcmd workers domain timeout_s
-    read -erp "Путь к списку доменов (пусто = ручной ввод): " domain_list || return 1
-    domain_list="${domain_list/#\~/$HOME}"
-    subcmd="$(ui_choose_one "Команда" "universal" "status" "scan" "Назад")" || return 0
-    [ "$subcmd" = "Назад" ] && return 0
+    subcmd="$(ui_choose_one "Режим проверки" "scan — подбор для одного домена" "universal — общие стратегии для списка" "status — проверка текущего zapret2" "Назад")" || return 0
+    case "$subcmd" in
+        "scan — подбор для одного домена") subcmd=scan ;;
+        "universal — общие стратегии для списка") subcmd=universal ;;
+        "status — проверка текущего zapret2") subcmd=status ;;
+        *) return 0 ;;
+    esac
 
     local cmd_args=("$subcmd")
     if [ "$subcmd" = "scan" ]; then
-        read -erp "Домен: " domain || return 1
+        read -erp "Домен (например www.youtube.com): " domain || return 1
         [ -n "$domain" ] || { gum_notify error "Укажите домен"; return 1; }
         cmd_args+=("--domain" "$domain")
         read -erp "Таймаут скана в секундах (по умолчанию 300, 0=без лимита): " timeout_s || return 1
         timeout_s="${timeout_s:-300}"
-        [ "$timeout_s" = "0" ] || cmd_args+=("--timeout" "$timeout_s")
+        [[ "$timeout_s" =~ ^[0-9]+$ ]] || { gum_notify error "Введите неотрицательное целое число"; return 1; }
+        cmd_args+=("--timeout" "$timeout_s")
     else
         if [ -z "$domain_list" ] || [ ! -f "$domain_list" ]; then
             read -erp "Путь к списку доменов (.txt): " domain_list || return 1
@@ -356,16 +375,21 @@ action_run_blockcheckw() {
             local sample_n
             read -erp "Сколько доменов тестировать (по умолчанию 5): " sample_n || return 1
             sample_n="${sample_n:-5}"
-            [ "$sample_n" = "10" ] || cmd_args+=("--sample" "$sample_n")
+            [[ "$sample_n" =~ ^[1-9][0-9]*$ ]] || { gum_notify error "Введите положительное целое число"; return 1; }
+            cmd_args+=("--sample" "$sample_n")
         fi
     fi
 
     read -erp "Воркеров (по умолчанию $saved_workers): " workers || return 1
+    workers="${workers:-$saved_workers}"
+    [[ "$workers" =~ ^[1-9][0-9]*$ ]] || { gum_notify error "Введите положительное число воркеров"; return 1; }
+    gum style --foreground 3 "Проверка может временно повлиять на сеть и работающий zapret2."
+    gum_confirm "Начать проверку?" || return 0
     local reports_dir started
     reports_dir="$(blockcheckw_reports_dir)"
     mkdir -p "$reports_dir" || { gum_notify error "Не удалось создать папку отчётов"; return 1; }
     started=$(mktemp) || return 1
-    (cd "$PRODUCT_DIR" && "$bin_path" -w "${workers:-$saved_workers}" "${cmd_args[@]}") || {
+    (cd "$PRODUCT_DIR" && "$bin_path" -w "$workers" "${cmd_args[@]}") || {
         rm -f "$started"
         gum_notify warn "blockcheckw завершился с ошибкой"
         pause

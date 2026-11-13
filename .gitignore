@@ -1,0 +1,8 @@
+# Local agent workspace
+.serena/
+
+# Editor and OS temporary files
+*~
+*.swp
+*.swo
+.DS_Store

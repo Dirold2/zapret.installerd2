@@ -77,6 +77,18 @@ manage_service() {
     local cmd="${1:-}"
     local unit="${PRODUCT_SERVICE}.service"
 
+    if [[ "$cmd" == start || "$cmd" == restart ]]; then
+        local other=""
+        case "$PRODUCT_SERVICE" in
+            zapret) other=zapret2 ;;
+            zapret2) other=zapret ;;
+        esac
+        if [ -n "$other" ] && service_is_active "$other"; then
+            gum_notify warn "Сервис $other уже работает. Остановите его перед запуском $PRODUCT_SERVICE."
+            return 1
+        fi
+    fi
+
     case "$INIT_SYSTEM" in
         systemd)
             if ! systemd_unit_exists "$unit"; then
@@ -119,6 +131,18 @@ manage_service() {
 manage_autostart() {
     local cmd="${1:-}"
     local unit="${PRODUCT_SERVICE}.service"
+
+    if [[ "$cmd" == enable ]]; then
+        local other=""
+        case "$PRODUCT_SERVICE" in
+            zapret) other=zapret2 ;;
+            zapret2) other=zapret ;;
+        esac
+        if [ -n "$other" ] && service_is_enabled "$other"; then
+            gum_notify warn "Автозапуск $other включён. Отключите его перед включением $PRODUCT_SERVICE."
+            return 1
+        fi
+    fi
 
     case "$INIT_SYSTEM" in
         systemd)
